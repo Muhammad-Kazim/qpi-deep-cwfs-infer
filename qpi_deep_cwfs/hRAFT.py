@@ -1,25 +1,39 @@
 import torch
-from torchvision.models.optical_flow import Raft_Large_Weights
+from torchvision.models.optical_flow import Raft_Large_Weights, Raft_Small_Weights
 import torchvision.transforms.functional as F
 import numpy as np
 from typing import Optional, Union
 from torch import nn, Tensor
 
 
-def init_model_RAFT(model, device='cuda', checkpoint=None):
+def init_model_RAFT(model, device='cuda', checkpoint=None, model_name = 'raft_large'):
+    
+    assert model_name in ['raft_large', 'raft_small'], "model_name must be 'raft_large' or 'raft_small'"
     
     if checkpoint == None:
-        print('Loading models with pretrained weights')
-        weights = Raft_Large_Weights.DEFAULT.get_state_dict()
+        if model_name == 'raft_large':
+            print(f'Loading model: {model_name} with pretrained weights')
+            weights = Raft_Large_Weights.DEFAULT.get_state_dict()
+            
+        elif model_name == 'raft_small':
+            print(f'Loading model: {model_name} with pretrained weights')
+            weights = Raft_Small_Weights.DEFAULT.get_state_dict()
+        
         weights['feature_encoder.convnormrelu.0.weight'] = torch.mean(weights['feature_encoder.convnormrelu.0.weight'], dim=1).unsqueeze(1)
         weights['context_encoder.convnormrelu.0.weight'] = torch.mean(weights['context_encoder.convnormrelu.0.weight'], dim=1).unsqueeze(1)
     else:
         print(f'Loading models with checkpoint: {checkpoint}')
         weights = torch.load(checkpoint, map_location=torch.device(device))
+        if 'model' in weights:
+            weights = weights['model']
     
     # model = raft_large(progress=False)
-    model.feature_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
-    model.context_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
+    if model_name == 'raft_large':
+        model.feature_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
+        model.context_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
+    elif model_name == 'raft_small':
+        model.feature_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 32, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
+        model.context_encoder.convnormrelu[0] = torch.nn.Conv2d(1, 32, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3))
     
     model.load_state_dict(weights)
     

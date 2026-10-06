@@ -1,0 +1,15 @@
+{
+    "PX_SIZE": 3.45e-6,
+    "DIST_PM_IM": 2.5e-3,
+    "DEVICE": "cpu",
+    "REF_PATH": "../data/2026-04-13_10_samples/reference/4.tiff",
+    "OBJ_PATH": "../data/2026-04-13_10_samples/specimen/4.tiff",
+    "CROP_REGION": [[50, 50], [550, 550]],
+    "SAVE_PATH": ".",
+    "SAVE_NAME": "spn45",
+    "MODEL_NAME": "sea_raft_medium",
+    "CKPT_PATH": "../ckpts/ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth",
+    "PATCH_SIZE": 500,
+    "OVERLAP": 150,
+    "CMAP": "gray"
+}
