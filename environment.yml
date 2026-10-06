@@ -1,9 +1,20 @@
-name: qpi_deep_cwfs
+name: qpi_deep_cwfs_infer
 channels:
   - anaconda
   - conda-forge
   - defaults
 dependencies:
+  - hdf5=1.12.2
+  - matplotlib=3.7.2
+  - numpy=1.24.3
+  - pillow=10.4.0
+  - pip=24.2
+  - py-opencv=4.7.0
+  - python=3.9
   - pip:
-      - py_cwfs_alg @ git+https://github.com/Muhammad-Kazim/py_cwfs_alg.git@main
-      - tensorboard
+      - protobuf
+      - scipy>=1.10.1
+      - tifffile>=2023.7.10
+      - torch --index-url https://download.pytorch.org/whl/cu126
+      - torchvision --index-url https://download.pytorch.org/whl/cu126
+      - configobj
