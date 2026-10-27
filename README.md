@@ -11,11 +11,35 @@ behind **one interface**.
 | Classical CWFS (ADMM) | — | ⏳ to port from `archive/` | torch |
 
 ## Install
+`pip install -e` installs into the *active* environment and does not create one, so create and activate
+an environment first. Run everything from the project root.
+
+### Laptop / CPU (DIC, Deep CWFS on CPU, tests)
 ```bash
-pip install -e ".[test]"          # DIC only
-pip install -e ".[deep,test]"     # + Deep CWFS (install the CUDA build of torch first for a GPU)
+# 1. environment (once)
+conda create -n speckle_qpi python=3.10 -y
+conda activate speckle_qpi
+#    without conda: python3 -m venv .venv && source .venv/bin/activate
+
+# 2. package (editable: code changes take effect without reinstalling)
+pip install -e ".[test]"                                                     # DIC only
+#    or, with Deep CWFS: CPU torch first (avoids the large CUDA download), then the extras
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[deep,test]"
+
+# 3. check
 pytest -v
 ```
+
+### GPU server (Deep CWFS on CUDA)
+```bash
+conda env create -f environment_gpu_server.yml        # CUDA torch from conda-forge + this package
+conda activate speckle_qpi
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"   # must print True
+#    without conda: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#                   (cuXXX to match nvidia-smi), then pip install -r requirements.txt
+```
+Data, running the GPU checks and copying results back: `gpu_server/README.md`.
 
 ## The common interface
 ```python
@@ -80,8 +104,11 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
   ⚠ Confirm with `tests/test_deep_cwfs_opd_retriever.py::test_sign_agrees_with_dic`. If it fails, flip the default in `deep_cwfs_opd_retriever.py`.
 
 ## Folder guide
-| Folder | Contents |
+| Folder / file | Contents |
 |---|---|
+| `pyproject.toml` | package metadata and dependencies (extras `deep`, `test`) |
+| `environment_gpu_server.yml` | conda env for the GPU server (CUDA torch from conda-forge + this package) |
+| `requirements.txt` | pip alternative: torch, torchvision, huggingface_hub, this package with `[deep,test]` |
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |
 | `examples/` | runnable scripts |

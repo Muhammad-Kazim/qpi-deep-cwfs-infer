@@ -1,0 +1,20 @@
+# Conda env for the GPU server (Deep CWFS on CUDA). From the project root:
+#   conda env create -f environment_gpu_server.yml && conda activate speckle_qpi
+# conda-forge's pytorch-gpu picks a CUDA build that matches the server's driver.
+name: speckle_qpi
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch-gpu
+  - torchvision
+  - numpy>=1.22
+  - scipy>=1.8
+  - tifffile>=2022.5
+  - matplotlib>=3.5
+  - pillow>=9
+  - pytest>=7
+  - huggingface_hub        # imported by the original qpi-deep-cwfs-infer code (reproduction test)
+  - pip
+  - pip:
+      - -e .               # this package (editable); dependencies above

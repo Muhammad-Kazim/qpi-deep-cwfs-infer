@@ -1,0 +1,7 @@
+# pip alternative to environment_gpu_server.yml, inside an activated env (Python >= 3.9). From the project root:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121   # first; cuXXX to match nvidia-smi
+#   pip install -r requirements.txt
+torch>=1.13
+torchvision>=0.14
+huggingface_hub
+-e .[deep,test]
