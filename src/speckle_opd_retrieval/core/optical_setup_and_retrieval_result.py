@@ -42,7 +42,8 @@ class RetrievalResult:
     Conventions (identical for all methods):
       - ``displacement`` d [px] satisfies ``specimen(x + d) = reference(x)``;
       - vector fields are ordered (y, x) = (rows, columns);
-      - ``opd = setup.opd_scale * integral(d)`` [m], mean-subtracted;
+      - ``opd = setup.opd_scale * integral(d)`` [m], mean-subtracted; textbook sign
+        OPD = ∫(n - n_medium) dz: higher RI than the medium (phase lag, converging) is positive;
       - ``opd_gradient = setup.gradient_scale * d`` (dimensionless, m/m).
 
     Attributes:

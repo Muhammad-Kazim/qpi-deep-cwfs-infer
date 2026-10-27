@@ -50,17 +50,10 @@ def test_shapes_and_interface_with_random_weights(tmp_path, name):
     assert r.method == "deep_cwfs" and r.params["model"] == name
 
 
-def test_legacy_sign_flips_displacement(tmp_path):
-    ck = _random_checkpoint(tmp_path, "raft_small")
-    ref = speckle((200, 200)); spec = np.roll(ref, 1, axis=0)
-    a = get_method("deep_cwfs", Setup(1, 1), checkpoint=ck, device=DEVICE, patch_size=200, overlap=0, iters=2).retrieve(ref, spec)
-    b = get_method("deep_cwfs", Setup(1, 1), checkpoint=ck, device=DEVICE, patch_size=200, overlap=0, iters=2, legacy_sign=True).retrieve(ref, spec)
-    assert np.allclose(a.displacement, -b.displacement) and np.allclose(a.opd, -b.opd)
-
-
 @pytest.mark.parametrize("name", ["raft_small", "raft_large", "sea_raft_medium"])
-def test_legacy_sign_reproduces_original_inference(name):
-    """Same OPD as the original qpi-deep-cwfs-infer script (single-patch branch) on real data."""
+def test_reproduces_original_inference(name):
+    """Same OPD as the original qpi-deep-cwfs-infer script (single-patch branch) on real data; the
+    original -px²/z·∫flow equals the textbook OPD with displacement = -flow, so no sign option is needed."""
     repo = ORIGINAL_REPO
     ck = _ckpt(name)
     if not (ck and os.path.isdir(repo) and os.path.isdir(SAMPLES)):
@@ -79,14 +72,14 @@ def test_legacy_sign_reproduces_original_inference(name):
         flows = (model(a, b, **settings)["final"] if "sea_raft" in name else model(a, b)[-1]).cpu()
         f0, f1 = torchvision.transforms.functional.resize(flows, size=list(I0.shape))[0]
         legacy = -(px**2) / z * utils.integrate_flow_field_torch(torch.stack([f1, f0], dim=2)).double().numpy()
-    res = get_method("deep_cwfs", Setup(px, z), checkpoint=ck, device=DEVICE, patch_size=I0.shape[0], legacy_sign=True).retrieve(I0, I1)
+    res = get_method("deep_cwfs", Setup(px, z), checkpoint=ck, device=DEVICE, patch_size=I0.shape[0]).retrieve(I0, I1)
     legacy = legacy - legacy.mean()
     np.testing.assert_allclose(res.opd, legacy, atol=1e-3 * np.abs(legacy).max())
 
 
 def test_sign_agrees_with_dic():
-    """Default (non-legacy) Deep CWFS and DIC should give positively correlated OPD on a real pair.
-    If this fails, the default sign in deep_cwfs_opd_retriever.py must be flipped."""
+    """Deep CWFS and DIC should give positively correlated OPD on a real pair
+    (first GPU run with the old displacement = +flow: corr = -0.982, hence -flow now)."""
     ck = _ckpt("raft_large") or _ckpt("raft_small")
     if not (ck and os.path.isdir(SAMPLES)):
         pytest.skip("checkpoint or sample data not found")

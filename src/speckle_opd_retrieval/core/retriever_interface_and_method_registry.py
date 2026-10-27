@@ -20,6 +20,11 @@ import numpy as np
 from .optical_setup_and_retrieval_result import RetrievalResult, Setup
 from .poisson_integration_gradient_to_opd import integrate
 
+# OPD sign (textbook): OPD = ∫(n - n_medium) dz, positive for an object of higher RI (phase lag,
+# converging field). Speckles move toward a converging region, i.e. along +∇OPD, so with
+# specimen(x + d) = reference(x): OPD = +px²/z · ∫d. Explained in notebooks/opd_sign_convention_explained.ipynb,
+# checked in tests/test_opd_sign_convention_physical_speckle_simulation.py.
+
 
 @dataclass
 class MethodOutput:
@@ -81,8 +86,8 @@ class OPDRetriever:
         phi = integrate(disp, self.integrator) if out.phi is None else np.asarray(out.phi, float) - np.mean(out.phi)
         info = dict(out.info, runtime_s=time.perf_counter() - t0)
         return RetrievalResult(
-            opd=phi * self.setup.opd_scale,
-            opd_gradient=disp * self.setup.gradient_scale,
+            opd=self.setup.opd_scale * phi,
+            opd_gradient=self.setup.gradient_scale * disp,
             displacement=disp,
             amplitude=out.amplitude,
             method=self.name,

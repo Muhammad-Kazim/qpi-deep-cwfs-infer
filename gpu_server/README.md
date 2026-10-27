@@ -48,7 +48,7 @@ rsync -av <server>:<path>/speckle_opd_retrieval/results/deep_cwfs_gpu_server/ re
 ## Output (`results/deep_cwfs_gpu_server/<date>_<host>/`)
 | File | Contents |
 |---|---|
-| `summary.png` | heat maps of corr(deep, DIC) and corr(displacement, gt labels) per checkpoint and pair; OPD maps (DIC, best checkpoint, integrated gt labels / legacy sign) with colour bars |
+| `summary.png` | heat maps of corr(deep, DIC) and corr(displacement, gt labels) per checkpoint and pair; OPD maps (DIC, best checkpoint, Deep − DIC / OPD from the gt labels) with colour bars |
 | `summary.md` | per checkpoint and test set: mean/min corr(deep, DIC) OPD, corr of the deep displacement with the SynthEllips ground-truth gradients, time per pair |
 | `metrics.csv` | the same per pair; `*_dispI_gtJ` = corr(displacement channel I (0 = y, 1 = x), gt gradient `N_J`) for deep and DIC |
 | `pytest_deep_cwfs_gpu.log`, `pytest_deep_cwfs_junit.xml` | pytest output (prints `corr(deep, dic)`) |

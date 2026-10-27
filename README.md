@@ -7,7 +7,7 @@ behind **one interface**.
 | Method | Name | Status | Needs |
 |---|---|---|---|
 | Digital image correlation (amplitude-robust ZNCC) | `dic` | ✅ tested on synthetic data | numpy, scipy |
-| Deep CWFS (CWFS-trained RAFT / SEA-RAFT) | `deep_cwfs` | ✅ ported; ⚠ not yet run with torch, sign check pending | `[deep]` = torch, torchvision |
+| Deep CWFS (CWFS-trained RAFT / SEA-RAFT) | `deep_cwfs` | ✅ ported; reproduces the original script on GPU; sign agrees with DIC | `[deep]` = torch, torchvision |
 | Classical CWFS (ADMM) | — | ⏳ to port from `archive/` | torch |
 
 ## Install
@@ -69,7 +69,10 @@ results = dic.retrieve_many(ref, [spec1, spec2, spec3])   # time series, same se
 **Conventions, identical for every method:**
 - displacement `d`: `specimen(x + d) = reference(x)`
 - fields ordered **(y, x)**
-- `OPD = pixel_size²/distance · ∫d`
+- `OPD = pixel_size²/distance · ∫d`, the textbook OPD = ∫(n − n_medium) dz: an object of **higher RI** than the
+  medium (phase lag, converging field) gives **positive** OPD, lower RI (lead, diverging) negative. Speckles move
+  toward a converging region. Explained with BPM and speckle simulations in
+  [`notebooks/opd_sign_convention_explained.ipynb`](notebooks/opd_sign_convention_explained.ipynb); no method has a sign option
 - `opd_gradient = pixel_size/distance · d`
 
 **How each method plugs in:**
@@ -100,8 +103,8 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 - Tiles of `patch_size` (500) with `overlap` (150). The last tile moves inward so all tiles hold real data, any image shape works, and small images get one mirror-pad. Blending: `mean` or `feather`.
 - Each tile is normalised by its reference maximum, then resized to the network input (RAFT 520×960, SEA-RAFT 540×960).
 - Integration: CG by default, matching the original.
-- **Sign:** the original script gives OPD = −px²/z·∫flow, so beads of higher RI come out negative. Here the default is `displacement = +flow`, matching DIC and the physical sign; `legacy_sign=True` reproduces the original maps.
-  ⚠ Confirm with `tests/test_deep_cwfs_opd_retriever.py::test_sign_agrees_with_dic`. If it fails, flip the default in `deep_cwfs_opd_retriever.py`.
+- **Sign:** the networks were trained on labels equal to −d, so `displacement = −flow` (fixed). It agrees with DIC
+  (corr +0.98), and the textbook OPD = px²/z·∫d = −px²/z·∫flow is exactly the original script's output.
 
 ## Folder guide
 | Folder / file | Contents |
@@ -112,6 +115,7 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |
 | `examples/` | runnable scripts |
+| `notebooks/` | explanatory notebooks (OPD sign convention) |
 | `gpu_server/` | Deep CWFS tests + inference on the GPU server; results are copied back with rsync into `results/deep_cwfs_gpu_server/` |
 | `results/` | outputs, git-ignored |
 | `archive/` | original reference code (classical CWFS still to port), read-only, delete once the port is complete |

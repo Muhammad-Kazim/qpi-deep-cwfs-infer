@@ -7,10 +7,10 @@ Run from the project root of a clone of this repository (branch ``speckle-opd-re
 Steps
 -----
 1. ``pytest tests/test_deep_cwfs_opd_retriever.py`` on the GPU, including
-   ``test_legacy_sign_reproduces_original_inference`` (against the original code, extracted from
+   ``test_reproduces_original_inference`` (against the original code, extracted from
    ``origin/main``) and ``test_sign_agrees_with_dic`` (prints ``corr(deep, dic)``).
 2. Inference with every checkpoint on every pair of the two test sets:
-   - corr(deep OPD, DIC OPD) for each pair (default sign; should be > 0);
+   - corr(deep OPD, DIC OPD) for each pair (should be > 0);
    - SynthEllips only: correlation of the Deep CWFS displacement channels (y, x) with the
      ground-truth gradient channels (``N_0``, ``N_1``), which checks sign and channel order
      independently of DIC (DIC is reported the same way for comparison).

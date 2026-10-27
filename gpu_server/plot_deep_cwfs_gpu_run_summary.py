@@ -56,7 +56,7 @@ def opd_panel(ax, fig, opd, title):
 
 
 def gt_label_opd(data: str, idx: str):
-    """OPD from the integrated ground-truth labels (network convention), same scaling as the run."""
+    """OPD from the integrated ground-truth labels (labels = -d, so OPD = -px²/z ∫labels), same scaling as the run."""
     from speckle_opd_retrieval import Setup, integrate, load_image
 
     folder = os.path.join(data, SYNTH)
@@ -64,7 +64,7 @@ def gt_label_opd(data: str, idx: str):
     dist = {r["img_id"]: float(r["dist_pm_im"]) * 1e-6 for r in csv.DictReader(open(os.path.join(folder, "dataset_details.csv")))}
     s, b = cfg["data_saving_params"]["GRAD_DATA_SCALE"], cfg["data_saving_params"]["GRAD_DATA_BIAS"]
     gt = np.stack([load_image(os.path.join(folder, "gt_gradients", f"{idx}_{c}.tiff")) / s - b for c in (0, 1)])
-    opd = Setup(cfg["system_params"]["DIGITAL_PX_SIZE"], dist[idx]).opd_scale * integrate(gt, "cg")
+    opd = -Setup(cfg["system_params"]["DIGITAL_PX_SIZE"], dist[idx]).opd_scale * integrate(gt, "cg")
     return opd - opd.mean()
 
 
@@ -104,7 +104,7 @@ def plot_run(run_dir: str, data: str | None = None, real_pair: str = "0", synth_
 
     ax = top.add_subplot(gs[0])
     heatmap(ax, top, c_dic, [short(c) for c in ckpts], [f"{s[:5]} {p}" for s, p in cols],
-            "corr(Deep CWFS OPD, DIC OPD), default sign  (> 0 = same sign; border of 40 px excluded)", "Pearson r")
+            "corr(Deep CWFS OPD, DIC OPD)  (> 0 = same sign; border of 40 px excluded)", "Pearson r")
     if c_gt is not None:
         ax = top.add_subplot(gs[1])
         heatmap(ax, top, c_gt, [short(c) for c in ckpts] + ["DIC"], [f"synth {p}" for p in synth],
@@ -121,12 +121,12 @@ def plot_run(run_dir: str, data: str | None = None, real_pair: str = "0", synth_
             dic, deep = np.load(fd)[idx], np.load(fb)[idx]
             r = get[best, set_name, idx]["corr_deep_dic_opd"]
             opd_panel(axs[row, 0], bottom, dic, f"{set_name} {idx}: DIC")
-            opd_panel(axs[row, 1], bottom, deep, f"{set_name} {idx}: Deep CWFS {short(best)}, default sign\ncorr with DIC = {r}")
+            opd_panel(axs[row, 1], bottom, deep, f"{set_name} {idx}: Deep CWFS {short(best)}\ncorr with DIC = {r}")
             ax = axs[row, 2]
             if set_name == "synthellips" and data and os.path.isdir(os.path.join(data, SYNTH)):
-                opd_panel(ax, bottom, gt_label_opd(data, idx), f"{set_name} {idx}: integrated ground-truth labels\n(network convention, +px²/z ∫gt)")
+                opd_panel(ax, bottom, gt_label_opd(data, idx), f"{set_name} {idx}: from ground-truth labels\n(−px²/z ∫labels, labels = −d)")
             else:
-                opd_panel(ax, bottom, -deep, f"{set_name} {idx}: Deep CWFS {short(best)}, legacy sign\n(= original script)")
+                opd_panel(ax, bottom, deep - dic, f"{set_name} {idx}: Deep CWFS − DIC")
 
     out = os.path.join(run_dir, "summary.png")
     fig.savefig(out, dpi=130)

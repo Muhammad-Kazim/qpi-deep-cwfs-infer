@@ -47,7 +47,7 @@ res.opd [m] (H,W) · res.opd_gradient (2,H,W) · res.displacement [px] (2,H,W) �
 |---|---|
 | Core interface, registry, integration, I/O, CLI | **Done, tested** (22 numpy-based tests pass) |
 | DIC | **Done, tested**. The grid result is bilinearly upsampled to full resolution before DCT integration. |
-| Deep CWFS | **Ported, not yet run with torch.** The tests (random-weight shapes, legacy-sign regression vs the original script, sign agreement with DIC) skip until torch, checkpoints and data are available. |
+| Deep CWFS | **Ported, not yet run with torch.** The tests (random-weight shapes, regression vs the original script, sign agreement with DIC) skip until torch, checkpoints and data are available. |
 | Classical CWFS | To port into `methods/classical_cwfs/`, returning `phi` and `amplitude` via `MethodOutput`. |
 
 ## Physics and conventions (keep consistent)
@@ -57,11 +57,18 @@ res.opd [m] (H,W) · res.opd_gradient (2,H,W) · res.displacement [px] (2,H,W) �
 - **Camera:** Basler acA1440-220um, 3.45 µm pixels, 12-bit stored as 16-bit, so the maximum is 65520 = saturated.
 - **Distance:** the user's DIC/OPD request used **z = 2.48 mm**, but the original `configs/args.json` has `DIST_PM_IM = 2.5e-3`. Confirm which is right.
 - **Displacement convention:** `specimen(x + d) = reference(x)`, the same as `cws.m`. Vector fields are ordered **(y, x)** = (rows, columns).
-- **Deep CWFS sign** (package default `displacement = +flow`, the physical sign, same as DIC; `legacy_sign=True` reproduces the original). The difference is still unresolved:
-  - Classical CWFS: OPD = **+**px²/z·φ.
-  - Original Deep CWFS: OPD = **−**px²/z·∫(flow1, flow0). Network channel 0 is the row gradient and channel 1 the column gradient.
-  - In the Deep CWFS output, beads with higher RI than their surroundings come out **negative**. The downstream TVAM scripts take `abs()`.
-  - Settle this with a synthetic test where the true OPD sign is known.
+- **OPD sign convention (decided 2026-10-27): textbook** OPD = ∫(n − n_m) dz, so higher RI / phase lag / converging →
+  **positive**. Package: OPD = **+**px²/z·∫d for every method, applied once in core; no sign options. BPM and speckle
+  simulations in `notebooks/opd_sign_convention_explained.ipynb`; physics test
+  `tests/test_opd_sign_convention_physical_speckle_simulation.py`. (The user's earlier "higher RI negative" habit equals
+  phase/k₀ in the exp(i(ωt − kz)) convention.)
+- **Deep CWFS sign:** the SynthEllips `gt_gradients` are the network's training labels; DIC displacement ≈ −labels, so
+  `displacement = −flow` (agrees with DIC, corr +0.98). The textbook OPD is then −px²/z·∫(flow1, flow0), exactly the
+  original script. Network channel 0 = row gradient, 1 = column.
+  - Open: an earlier note said that in the original Deep CWFS output beads of higher RI come out negative (downstream TVAM
+    scripts take `abs()`). The simulations say the original sign gives higher RI positive for direct mask→sensor
+    propagation. Check on a real sample of known RI.
+  - Classical CWFS (to port): original OPD = **+**px²/z·φ; check that its φ follows specimen(x + d) = reference(x).
 - **SEA-RAFT input-scaling quirk:** the preprocessing maps images to [−1, 1], and SEA-RAFT's own `forward` then applies `2·(x/255) − 1` again, so the network sees about −1 ± 0.01. It was kept as is because the checkpoints were trained that way. Check before changing.
 - **Deep CWFS flow values:** these are **not** rescaled after resizing back to the patch size, which is how the networks were trained.
 - **Bugs in the original Deep CWFS tiling, fixed in the archived `speckle_qpi`:**
