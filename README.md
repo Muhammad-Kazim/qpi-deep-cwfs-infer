@@ -85,8 +85,8 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |
 | `examples/` | runnable scripts |
-| `gpu_server/` | Deep CWFS tests + inference on the GPU server; results come back via git in `results/deep_cwfs_gpu_server/` |
-| `results/` | outputs (only `deep_cwfs_gpu_server/` is tracked by git) |
+| `gpu_server/` | Deep CWFS tests + inference on the GPU server; results are copied back with rsync into `results/deep_cwfs_gpu_server/` |
+| `results/` | outputs, git-ignored |
 | `archive/` | original reference code (classical CWFS still to port), read-only, delete once the port is complete |
 
 Every folder has a README listing its files.

@@ -1,4 +1,4 @@
-"""Deep CWFS checks on the GPU server; writes a results folder that is committed and pulled back.
+"""Deep CWFS checks on the GPU server; writes a results folder that is copied back with rsync (not git).
 
 Run from the project root of a clone of this repository (branch ``speckle-opd-retrieval``):
 
@@ -14,8 +14,8 @@ Steps
    - SynthEllips only: correlation of the Deep CWFS displacement channels (y, x) with the
      ground-truth gradient channels (``N_0``, ``N_1``), which checks sign and channel order
      independently of DIC (DIC is reported the same way for comparison).
-3. ``summary.md``, ``metrics.csv``, ``environment.json`` and (with ``--save-maps``, ~60 MB) the OPD maps
-   as compressed float32 ``.npz`` into ``results/deep_cwfs_gpu_server/<date>_<host>/``.
+3. ``summary.md``, ``metrics.csv``, ``environment.json`` and (unless ``--no-maps``) the OPD maps as
+   compressed float32 ``.npz`` into ``results/deep_cwfs_gpu_server/<date>_<host>/``.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def main():
                     help="folder holding deep_cwfs_model_checkpoints/ and the two test sets")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--original-ref", default="origin/main", help="git ref holding the original qpi_deep_cwfs code")
-    ap.add_argument("--save-maps", action="store_true", help="also save all OPD maps (.npz, ~60 MB)")
+    ap.add_argument("--no-maps", action="store_true", help="do not save the OPD maps (.npz, ~60 MB per run)")
     ap.add_argument("--checkpoint-glob", default="*.pth", help="restrict checkpoints, e.g. '*raft_small*'")
     ap.add_argument("--limit", type=int, default=None, help="only the first N pairs of each set (quick check)")
     ap.add_argument("--skip-pytest", action="store_true")
@@ -171,7 +171,7 @@ def main():
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader(); w.writerows(rows)
 
-    if args.save_maps:
+    if not args.no_maps:
         os.makedirs(os.path.join(out, "opd_maps"), exist_ok=True)
         for (ck_name, set_name), m in maps.items():
             np.savez_compressed(os.path.join(out, "opd_maps", f"deep_cwfs_{ck_name}_{set_name}_opd_m.npz"), **m)
@@ -200,7 +200,7 @@ def main():
     with open(os.path.join(out, "summary.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
-    print(f"\nresults in {out}\ncommit them with:  git add {os.path.relpath(out, PROJECT)} && git commit -m 'GPU run {run}' && git push")
+    print(f"\nresults in {out}\ncopy to the laptop's results/deep_cwfs_gpu_server/ with rsync (results/ is git-ignored)")
 
 
 if __name__ == "__main__":
