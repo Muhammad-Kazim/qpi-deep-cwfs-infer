@@ -4,6 +4,7 @@ server → laptop with rsync (`results/` is git-ignored, so nothing large goes t
 
 | File | Purpose |
 |---|---|
+| `plot_deep_cwfs_gpu_run_summary.py` | `summary.png` for a run folder (called by the runner; rerun by hand with `python gpu_server/plot_deep_cwfs_gpu_run_summary.py results/deep_cwfs_gpu_server/<run>`) |
 | `run_deep_cwfs_gpu_tests_and_inference.py` | runs the Deep CWFS pytest file on the GPU (incl. reproduction of the original script and the sign check against DIC), then infers every checkpoint on both test sets and writes `results/deep_cwfs_gpu_server/<date>_<host>/` |
 
 ## On the server
@@ -47,6 +48,7 @@ rsync -av <server>:<path>/speckle_opd_retrieval/results/deep_cwfs_gpu_server/ re
 ## Output (`results/deep_cwfs_gpu_server/<date>_<host>/`)
 | File | Contents |
 |---|---|
+| `summary.png` | heat maps of corr(deep, DIC) and corr(displacement, gt labels) per checkpoint and pair; OPD maps (DIC, best checkpoint, integrated gt labels / legacy sign) with colour bars |
 | `summary.md` | per checkpoint and test set: mean/min corr(deep, DIC) OPD, corr of the deep displacement with the SynthEllips ground-truth gradients, time per pair |
 | `metrics.csv` | the same per pair; `*_dispI_gtJ` = corr(displacement channel I (0 = y, 1 = x), gt gradient `N_J`) for deep and DIC |
 | `pytest_deep_cwfs_gpu.log`, `pytest_deep_cwfs_junit.xml` | pytest output (prints `corr(deep, dic)`) |

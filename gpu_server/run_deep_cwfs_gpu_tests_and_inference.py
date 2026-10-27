@@ -14,7 +14,8 @@ Steps
    - SynthEllips only: correlation of the Deep CWFS displacement channels (y, x) with the
      ground-truth gradient channels (``N_0``, ``N_1``), which checks sign and channel order
      independently of DIC (DIC is reported the same way for comparison).
-3. ``summary.md``, ``metrics.csv``, ``environment.json`` and (unless ``--no-maps``) the OPD maps as
+3. ``summary.md``, ``summary.png`` (heat maps + OPD maps with colour bars, see
+   ``plot_deep_cwfs_gpu_run_summary.py``), ``metrics.csv``, ``environment.json`` and (unless ``--no-maps``) the OPD maps as
    compressed float32 ``.npz`` into ``results/deep_cwfs_gpu_server/<date>_<host>/``.
 """
 
@@ -200,6 +201,9 @@ def main():
     with open(os.path.join(out, "summary.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
+
+    from plot_deep_cwfs_gpu_run_summary import plot_run     # same folder as this script
+    print(f"figure: {plot_run(out, data)}")
     print(f"\nresults in {out}\ncopy to the laptop's results/deep_cwfs_gpu_server/ with rsync (results/ is git-ignored)")
 
 
