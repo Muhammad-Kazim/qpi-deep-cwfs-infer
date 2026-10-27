@@ -13,4 +13,4 @@ qpi-deep-cwfs-infer code if `archive/` is absent (see `gpu_server/`).
 | `test_dic_opd_retriever_end_to_end.py` | DIC via the common interface: phase in → OPD out (sign, scale), validation |
 | `test_method_registry_and_command_line.py` | registry (lazy, torch-free), `get_method`/`retrieve`, CLI with config + `--param` |
 | `test_deep_cwfs_patch_tiling_and_stitching.py` | tiling coverage, exact stitching, padding |
-| `test_deep_cwfs_opd_retriever.py` | Deep CWFS via the interface (random weights), regression vs the original script, **sign agreement with DIC** |
+| `test_deep_cwfs_opd_retriever.py` | Deep CWFS via the interface (random SEA-RAFT weights), checkpoint resolution, regression vs the original script (default checkpoint only), **sign agreement with DIC** |

@@ -9,6 +9,7 @@ patches ``(B, H, W)`` to a flow field ``(B, 2, H, W)`` at the same size.
 from __future__ import annotations
 
 import argparse
+import glob
 import logging
 import os
 import warnings
@@ -31,6 +32,39 @@ INPUT_SIZE = {
     # 540 rather than 520 so that H is divisible by 8 after SEA-RAFT's padding.
     "sea_raft": (540, 960),
 }
+
+
+#: Default checkpoint (the longer-trained SEA-RAFT medium), used when neither a checkpoint nor a
+#: different model is requested.
+DEFAULT_CHECKPOINT = "ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth"
+
+
+def checkpoint_dir() -> str:
+    """Folder with the CWFS checkpoints: ``$SPECKLE_OPD_CHECKPOINTS``, else
+    ``$SPECKLE_OPD_DATA/deep_cwfs_model_checkpoints``, else the shared ``../data/`` next to the project."""
+    if os.environ.get("SPECKLE_OPD_CHECKPOINTS"):
+        return os.environ["SPECKLE_OPD_CHECKPOINTS"]
+    project = os.path.abspath(os.path.join(os.path.dirname(__file__), *[".."] * 4))
+    data = os.environ.get("SPECKLE_OPD_DATA", os.path.join(project, "..", "data"))
+    return os.path.join(data, "deep_cwfs_model_checkpoints")
+
+
+def resolve_checkpoint(model: Optional[str] = None, checkpoint: Optional[str] = None) -> str:
+    """The checkpoint to load: ``checkpoint`` if given; else :data:`DEFAULT_CHECKPOINT` when ``model``
+    is omitted or ``sea_raft_medium``; else the newest ``*_<model>_*.pth`` in :func:`checkpoint_dir`."""
+    if checkpoint is not None:
+        return checkpoint
+    folder = checkpoint_dir()
+    if model is None or model.lower() == guess_model_name(DEFAULT_CHECKPOINT):
+        path = os.path.join(folder, DEFAULT_CHECKPOINT)
+    else:
+        found = sorted(glob.glob(os.path.join(folder, f"*_{model.lower()}_*.pth")))
+        if not found:
+            raise FileNotFoundError(f"no checkpoint for '{model}' in {folder}; pass checkpoint=...")
+        path = found[-1]
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"{path} not found; set SPECKLE_OPD_CHECKPOINTS or pass checkpoint=...")
+    return path
 
 
 def guess_model_name(checkpoint: str) -> str:
@@ -176,17 +210,15 @@ def build_flow_model(
 
     Args:
         model: one of :data:`MODEL_NAMES`; guessed from ``checkpoint`` if omitted.
-        checkpoint: path to a CWFS-trained ``.pth`` file.
+        checkpoint: path to a CWFS-trained ``.pth`` file; if omitted, see :func:`resolve_checkpoint`
+            (default: the longer-trained SEA-RAFT medium, :data:`DEFAULT_CHECKPOINT`).
         device: ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``...
         iters: number of recurrent refinement iterations (default: 12 for
             RAFT, 4 for SEA-RAFT, as in the original scripts).
     """
-    if model is None:
-        if checkpoint is None:
-            raise ValueError("Give a checkpoint and/or a model name.")
-        model = guess_model_name(checkpoint)
-    model = model.lower()
-    if checkpoint is not None and not os.path.isfile(checkpoint):
+    checkpoint = resolve_checkpoint(model, checkpoint)
+    model = (model or guess_model_name(checkpoint)).lower()
+    if not os.path.isfile(checkpoint):
         raise FileNotFoundError(checkpoint)
     log.info("Loading %s from %s", model, checkpoint)
     if model.startswith("sea_raft"):

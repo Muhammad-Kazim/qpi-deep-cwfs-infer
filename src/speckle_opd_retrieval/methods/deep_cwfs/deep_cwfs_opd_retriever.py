@@ -32,9 +32,11 @@ class DeepCWFS(OPDRetriever):
 
     Args:
         setup: pixel size and mask–sensor distance.
-        checkpoint: CWFS-trained ``.pth`` file (see ``data/deep_cwfs_model_checkpoints/``).
-        model: ``raft_large`` | ``raft_small`` | ``sea_raft_medium`` | ``sea_raft_small``;
-            guessed from the checkpoint file name if omitted.
+        checkpoint: CWFS-trained ``.pth`` file. Default: the longer-trained SEA-RAFT medium
+            (``ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth``), looked up in
+            ``$SPECKLE_OPD_CHECKPOINTS``, ``$SPECKLE_OPD_DATA/deep_cwfs_model_checkpoints`` or ``../data/``.
+        model: ``raft_large`` | ``raft_small`` | ``sea_raft_medium`` | ``sea_raft_small``; guessed from the
+            checkpoint name if omitted. A model without a checkpoint loads that model's newest checkpoint.
         device: ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``.
         patch_size: square tile size [px] (networks were trained on ~500 px crops); smaller
             images are mirror-padded up to it.
@@ -55,12 +57,13 @@ class DeepCWFS(OPDRetriever):
             import torch
         except ImportError as e:  # pragma: no cover
             raise ImportError("Deep CWFS needs PyTorch: pip install -e '.[deep]'") from e
-        from .optical_flow_network_builders import build_flow_model
+        from .optical_flow_network_builders import build_flow_model, resolve_checkpoint
 
         if str(device).startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("CUDA requested but not available; use device='cpu'.")
         if not 0 <= int(overlap) < int(patch_size):
             raise ValueError("need 0 <= overlap < patch_size")
+        checkpoint = resolve_checkpoint(model, checkpoint)          # recorded in params for provenance
         self.flow_model = build_flow_model(model, checkpoint, device=device, iters=iters)
         super().__init__(setup, integrator=integrator, checkpoint=checkpoint, model=self.flow_model.name,
                          device=str(device), patch_size=int(patch_size), overlap=int(overlap), blend=blend,

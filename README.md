@@ -7,37 +7,43 @@ behind **one interface**.
 | Method | Name | Status | Needs |
 |---|---|---|---|
 | Digital image correlation (amplitude-robust ZNCC) | `dic` | ✅ tested on synthetic data | numpy, scipy |
-| Deep CWFS (CWFS-trained RAFT / SEA-RAFT) | `deep_cwfs` | ✅ ported; reproduces the original script on GPU; sign agrees with DIC | `[deep]` = torch, torchvision |
+| Deep CWFS (CWFS-trained SEA-RAFT; default checkpoint `ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth`, RAFT on request) | `deep_cwfs` | ✅ ported; reproduces the original script on GPU; sign agrees with DIC | `[deep]` = torch, torchvision |
 | Classical CWFS (ADMM) | — | ⏳ to port from `archive/` | torch |
 
 ## Install
 `pip install -e` installs into the *active* environment and does not create one, so create and activate
 an environment first. Run everything from the project root.
 
-### Laptop / CPU (DIC, Deep CWFS on CPU, tests)
 ```bash
-# 1. environment (once)
-conda create -n speckle_qpi python=3.10 -y
-conda activate speckle_qpi
+conda create -n speckle_qpi python=3.10 -y && conda activate speckle_qpi
 #    without conda: python3 -m venv .venv && source .venv/bin/activate
-
-# 2. package (editable: code changes take effect without reinstalling)
-pip install -e ".[test]"                                                     # DIC only
-#    or, with Deep CWFS: CPU torch first (avoids the large CUDA download), then the extras
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[deep,test]"
-
-# 3. check
-pytest -v
 ```
 
-### GPU server (Deep CWFS on CUDA)
+### Using the methods (no development tools needed)
 ```bash
-conda env create -f environment_gpu_server.yml        # CUDA torch from conda-forge + this package
+pip install -e .                                          # DIC only (numpy, scipy, tifffile, matplotlib, pillow)
+
+# Deep CWFS in addition: torch first (CPU build shown; for a GPU use .../whl/cu121 matching nvidia-smi)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[deep]"                                  # or: pip install -r requirements.txt
+```
+
+### Development (tests, reproduction check, notebooks)
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[deep,dev]"                              # or: pip install -r requirements-dev.txt
+pytest -v
+```
+`dev` adds pytest, huggingface_hub (imported by the original qpi-deep-cwfs-infer code in the reproduction test),
+jupyterlab, ipykernel, nbformat and nbclient.
+
+### GPU server (development env, Deep CWFS on CUDA)
+```bash
+conda env create -f environment_gpu_server.yml        # CUDA torch from conda-forge + this package + dev tools
 conda activate speckle_qpi
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"   # must print True
 #    without conda: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-#                   (cuXXX to match nvidia-smi), then pip install -r requirements.txt
+#                   (cuXXX to match nvidia-smi), then pip install -r requirements-dev.txt
 ```
 Data, running the GPU checks and copying results back: `gpu_server/README.md`.
 
@@ -51,9 +57,8 @@ ref, spec = load_image("ref.tiff"), load_image("specimen.tiff")
 available_methods()        # {'dic': '…', 'deep_cwfs': '…'}  (does not import torch)
 
 dic  = get_method("dic", setup, window=32, step=8, search=7, saturation=65520)
-deep = get_method("deep_cwfs", setup,
-                  checkpoint="../data/deep_cwfs_model_checkpoints/ellipsoids_raft_large_20260216_124504_4_5012.pth",
-                  device="cuda")
+deep = get_method("deep_cwfs", setup, device="cuda")   # default: longer-trained SEA-RAFT medium
+# other model: get_method("deep_cwfs", setup, model="raft_large")  or  checkpoint="path/to/file.pth"
 
 for method in (dic, deep):
     res = method.retrieve(ref, spec)            # → RetrievalResult
@@ -84,7 +89,7 @@ results = dic.retrieve_many(ref, [spec1, spec2, spec3])   # time series, same se
 speckle-opd-retrieval methods
 speckle-opd-retrieval run -m dic -m deep_cwfs -r ref.tiff -s "frames/*.tiff" \
     --pixel-size 3.45e-6 --distance 2.48e-3 \
-    --param saturation=65520 --param checkpoint=../data/deep_cwfs_model_checkpoints/<file>.pth -o results
+    --param saturation=65520 -o results            # Deep CWFS: default checkpoint, or --param model=raft_large
 speckle-opd-retrieval run -c config.json      # keys as the flags, plus "params": {...}
 ```
 Method parameters are passed with `--param name=value`. With several methods, each method receives only the parameters it accepts. A parameter that no selected method accepts is an error.
@@ -109,9 +114,10 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 ## Folder guide
 | Folder / file | Contents |
 |---|---|
-| `pyproject.toml` | package metadata and dependencies (extras `deep`, `test`) |
-| `environment_gpu_server.yml` | conda env for the GPU server (CUDA torch from conda-forge + this package) |
-| `requirements.txt` | pip alternative: torch, torchvision, huggingface_hub, this package with `[deep,test]` |
+| `pyproject.toml` | package metadata and dependencies (extras: `deep` for Deep CWFS, `dev` for development) |
+| `environment_gpu_server.yml` | development conda env for the GPU server (CUDA torch from conda-forge + this package + dev tools) |
+| `requirements.txt` | runtime only (use DIC + Deep CWFS): torch, torchvision, this package with `[deep]` |
+| `requirements-dev.txt` | development: runtime + `[dev]` (pytest, huggingface_hub, jupyterlab, ipykernel, nbformat, nbclient) |
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |
 | `examples/` | runnable scripts |

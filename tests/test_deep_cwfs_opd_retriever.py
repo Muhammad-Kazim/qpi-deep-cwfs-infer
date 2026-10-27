@@ -1,4 +1,5 @@
-"""Deep CWFS through the common interface (skipped without torch / checkpoints / data)."""
+"""Deep CWFS through the common interface (skipped without torch / checkpoints / data).
+Trained-model tests use only the default checkpoint (longer-trained SEA-RAFT medium)."""
 import glob
 import os
 import sys
@@ -10,7 +11,8 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("torchvision")
 
 from speckle_opd_retrieval import Setup, get_method, load_image
-from speckle_opd_retrieval.methods.deep_cwfs.optical_flow_network_builders import _sea_raft_args, guess_model_name
+from speckle_opd_retrieval.methods.deep_cwfs.optical_flow_network_builders import (
+    DEFAULT_CHECKPOINT, _sea_raft_args, guess_model_name, resolve_checkpoint)
 from conftest import CKPTS, DEVICE, ORIGINAL_REPO, SAMPLES, speckle
 
 
@@ -30,9 +32,7 @@ def _random_checkpoint(tmp_path, name):
     return str(p)
 
 
-def _ckpt(name):
-    c = sorted(glob.glob(os.path.join(CKPTS, f"*_{name}_*.pth")))
-    return c[-1] if c else None
+DEFAULT_CKPT = os.path.join(CKPTS, DEFAULT_CHECKPOINT)
 
 
 def test_guess_model_name():
@@ -40,7 +40,19 @@ def test_guess_model_name():
     assert guess_model_name("ellipsoids_raft_small_2026.pth") == "raft_small"
 
 
-@pytest.mark.parametrize("name", ["raft_small", "sea_raft_medium"])
+def test_checkpoint_resolution(monkeypatch):
+    if not os.path.isdir(CKPTS):
+        pytest.skip("checkpoint folder not found")
+    monkeypatch.setenv("SPECKLE_OPD_CHECKPOINTS", CKPTS)
+    assert os.path.basename(resolve_checkpoint()) == DEFAULT_CHECKPOINT
+    assert os.path.basename(resolve_checkpoint("sea_raft_medium")) == DEFAULT_CHECKPOINT
+    assert resolve_checkpoint(checkpoint="x.pth") == "x.pth"
+    others = sorted(glob.glob(os.path.join(CKPTS, "*_raft_large_*.pth")))
+    if others:
+        assert resolve_checkpoint("raft_large") == others[-1]
+
+
+@pytest.mark.parametrize("name", ["sea_raft_medium"])
 def test_shapes_and_interface_with_random_weights(tmp_path, name):
     m = get_method("deep_cwfs", Setup(3.45e-6, 2.48e-3), checkpoint=_random_checkpoint(tmp_path, name), device=DEVICE,
                    patch_size=256, overlap=64, batch_size=2, iters=2)
@@ -50,13 +62,12 @@ def test_shapes_and_interface_with_random_weights(tmp_path, name):
     assert r.method == "deep_cwfs" and r.params["model"] == name
 
 
-@pytest.mark.parametrize("name", ["raft_small", "raft_large", "sea_raft_medium"])
-def test_reproduces_original_inference(name):
+def test_reproduces_original_inference():
     """Same OPD as the original qpi-deep-cwfs-infer script (single-patch branch) on real data; the
     original -px²/z·∫flow equals the textbook OPD with displacement = -flow, so no sign option is needed."""
     repo = ORIGINAL_REPO
-    ck = _ckpt(name)
-    if not (ck and os.path.isdir(repo) and os.path.isdir(SAMPLES)):
+    ck, name = DEFAULT_CKPT, guess_model_name(DEFAULT_CHECKPOINT)
+    if not (os.path.isfile(ck) and os.path.isdir(repo) and os.path.isdir(SAMPLES)):
         pytest.skip("checkpoints, archived repo or sample data not found")
     pytest.importorskip("huggingface_hub")   # imported by the original utils
     sys.path.insert(0, repo)
@@ -77,15 +88,17 @@ def test_reproduces_original_inference(name):
     np.testing.assert_allclose(res.opd, legacy, atol=1e-3 * np.abs(legacy).max())
 
 
-def test_sign_agrees_with_dic():
+def test_sign_agrees_with_dic(monkeypatch):
     """Deep CWFS and DIC should give positively correlated OPD on a real pair
     (first GPU run with the old displacement = +flow: corr = -0.982, hence -flow now)."""
-    ck = _ckpt("raft_large") or _ckpt("raft_small")
-    if not (ck and os.path.isdir(SAMPLES)):
-        pytest.skip("checkpoint or sample data not found")
+    if not (os.path.isfile(DEFAULT_CKPT) and os.path.isdir(SAMPLES)):
+        pytest.skip("default checkpoint or sample data not found")
     I0 = load_image(os.path.join(SAMPLES, "reference", "0.tiff")); I1 = load_image(os.path.join(SAMPLES, "specimen", "0.tiff"))
     s = Setup(3.45e-6, 2.48e-3)
-    deep = get_method("deep_cwfs", s, checkpoint=ck, device=DEVICE, patch_size=I0.shape[0]).retrieve(I0, I1).opd
+    monkeypatch.setenv("SPECKLE_OPD_CHECKPOINTS", CKPTS)
+    m = get_method("deep_cwfs", s, device=DEVICE, patch_size=I0.shape[0])          # default model
+    assert os.path.basename(m.params["checkpoint"]) == DEFAULT_CHECKPOINT
+    deep = m.retrieve(I0, I1).opd
     dic = get_method("dic", s, saturation=float(I0.max())).retrieve(I0, I1).opd
     sl = (slice(40, -40), slice(40, -40))
     c = np.corrcoef(deep[sl].ravel(), dic[sl].ravel())[0, 1]

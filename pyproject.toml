@@ -12,8 +12,9 @@ authors = [{ name = "Syed Muhammad Kazim" }]
 dependencies = ["numpy>=1.22", "scipy>=1.8", "tifffile>=2022.5", "matplotlib>=3.5", "pillow>=9"]
 
 [project.optional-dependencies]
+# users: no extra (DIC) or `deep` (Deep CWFS). Developers: `dev` (tests, original-script check, notebooks).
 deep = ["torch>=1.13", "torchvision>=0.14"]
-test = ["pytest>=7"]
+dev = ["pytest>=7", "huggingface_hub", "jupyterlab", "ipykernel", "nbformat", "nbclient"]
 
 [project.scripts]
 speckle-opd-retrieval = "speckle_opd_retrieval.command_line_interface:main"

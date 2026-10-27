@@ -1,8 +1,7 @@
 """Run several OPD retrieval methods on the same speckle pair and plot the results side by side.
 
     python examples/example_compare_methods_on_one_speckle_pair.py REF.tiff SPEC.tiff \
-        --methods dic deep_cwfs \
-        --checkpoint ../data/deep_cwfs_model_checkpoints/ellipsoids_raft_large_20260216_124504_4_5012.pth
+        --methods dic deep_cwfs        # Deep CWFS: default checkpoint unless --checkpoint is given
 
 Every method is used through the same interface: get_method(name, setup, **params).retrieve(ref, spec).
 """
@@ -18,7 +17,7 @@ ap.add_argument("reference"); ap.add_argument("specimen")
 ap.add_argument("--methods", nargs="+", default=["dic"])
 ap.add_argument("--pixel-size", type=float, default=3.45e-6)
 ap.add_argument("--distance", type=float, default=2.48e-3)
-ap.add_argument("--checkpoint", default=None, help="needed for deep_cwfs")
+ap.add_argument("--checkpoint", default=None, help="deep_cwfs checkpoint (default: longer-trained SEA-RAFT medium)")
 ap.add_argument("--device", default="cpu")
 ap.add_argument("--saturation", type=float, default=65520)
 ap.add_argument("--out", default=None, help="folder to save results (optional)")

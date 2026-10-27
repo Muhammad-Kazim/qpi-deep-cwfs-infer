@@ -1,7 +1,8 @@
-# pip alternative to environment_gpu_server.yml, inside an activated env (Python >= 3.9). From the project root:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121   # first; cuXXX to match nvidia-smi
+# Runtime packages for USING the methods (DIC + Deep CWFS); no test or notebook tools.
+# Inside an activated env (Python >= 3.9), from the project root:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121   # first; cuXXX to match nvidia-smi (or /cpu)
 #   pip install -r requirements.txt
+# DIC only needs neither torch line: pip install -e .
 torch>=1.13
 torchvision>=0.14
-huggingface_hub
--e .[deep,test]
+-e .[deep]

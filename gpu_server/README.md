@@ -5,7 +5,7 @@ server → laptop with rsync (`results/` is git-ignored, so nothing large goes t
 | File | Purpose |
 |---|---|
 | `plot_deep_cwfs_gpu_run_summary.py` | `summary.png` for a run folder (called by the runner; rerun by hand with `python gpu_server/plot_deep_cwfs_gpu_run_summary.py results/deep_cwfs_gpu_server/<run>`) |
-| `run_deep_cwfs_gpu_tests_and_inference.py` | runs the Deep CWFS pytest file on the GPU (incl. reproduction of the original script and the sign check against DIC), then infers every checkpoint on both test sets and writes `results/deep_cwfs_gpu_server/<date>_<host>/` |
+| `run_deep_cwfs_gpu_tests_and_inference.py` | runs the Deep CWFS pytest file on the GPU (incl. reproduction of the original script and the sign check against DIC), then infers the default checkpoint (longer-trained SEA-RAFT medium) on both test sets and writes `results/deep_cwfs_gpu_server/<date>_<host>/` |
 
 ## On the server
 ```bash
@@ -21,7 +21,7 @@ python -c "import torch; print(torch.__version__, torch.cuda.is_available())"   
 Without conda (any env with Python >= 3.9, e.g. `python -m venv .venv && source .venv/bin/activate`):
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121   # first; cuXXX to match nvidia-smi
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 If the conda torch needs a newer driver than the server has, pin the CUDA version: add `- cuda-version=12.4`
 (≤ the "CUDA Version" shown by `nvidia-smi`) to `environment_gpu_server.yml`.
@@ -30,10 +30,10 @@ If the conda torch needs a newer driver than the server has, pin the CUDA versio
 # 3. data: one folder holding these three (copied from the laptop's Claude+Projects/data/)
 #    deep_cwfs_model_checkpoints/  2026-04-13_cwfs_speckle_pairs_10_samples/
 #    2025-12-03_synthellips_v0_synthetic_cwfs_pairs_with_ground_truth/
-# 4. run (one call: all checkpoints on both test sets)
+# 4. run (one call: default checkpoint on both test sets)
 python gpu_server/run_deep_cwfs_gpu_tests_and_inference.py --data /path/to/data --device cuda
 ```
-Options: `--no-maps` (skip the OPD maps, ~60 MB per run), `--checkpoint-glob '*raft_large*'`, `--limit N`
+Options: `--no-maps` (skip the OPD maps), `--checkpoint-glob '*.pth'` (all checkpoints instead of the default), `--limit N`
 (first N pairs per set), `--skip-pytest`. The original code is extracted from `origin/main` into `.cache/` (git-ignored).
 
 ## Laptop side (project root)

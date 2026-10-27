@@ -5,8 +5,8 @@ Examples::
     speckle-opd-retrieval methods
     speckle-opd-retrieval run -m dic -r ref.tiff -s "frames/*.tiff" --pixel-size 3.45e-6 --distance 2.48e-3 \
         --param saturation=65520 -o results
-    speckle-opd-retrieval run -m deep_cwfs -r ref.tiff -s spec.tiff --pixel-size 3.45e-6 --distance 2.48e-3 \
-        --param checkpoint=../data/deep_cwfs_model_checkpoints/ellipsoids_raft_large_20260216_124504_4_5012.pth
+    speckle-opd-retrieval run -m deep_cwfs -r ref.tiff -s spec.tiff --pixel-size 3.45e-6 --distance 2.48e-3
+        # default checkpoint (longer-trained SEA-RAFT medium); --param model=raft_large or --param checkpoint=... for others
     speckle-opd-retrieval run -c config.json        # same keys as the flags; flags override the file
 
 Method parameters are passed generically as ``--param name=value`` (repeatable); values are parsed

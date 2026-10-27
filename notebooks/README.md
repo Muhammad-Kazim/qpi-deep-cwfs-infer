@@ -1,5 +1,5 @@
 # notebooks/
-Explanatory notebooks, saved with their outputs (figures). Open with `jupyter lab`.
+Explanatory notebooks, saved with their outputs (figures). Open with `pip install -e ".[dev]"` (development extra) and `jupyter lab`.
 
 | File | Purpose |
 |---|---|

@@ -1,0 +1,7 @@
+# DEVELOPMENT packages on top of requirements.txt: pytest, huggingface_hub (imported by the original
+# qpi-deep-cwfs-infer code in the reproduction test), jupyterlab / ipykernel / nbformat / nbclient (notebooks).
+# Not needed to use DIC or Deep CWFS. From the project root:
+#   pip install -r requirements-dev.txt
+torch>=1.13
+torchvision>=0.14
+-e .[deep,dev]

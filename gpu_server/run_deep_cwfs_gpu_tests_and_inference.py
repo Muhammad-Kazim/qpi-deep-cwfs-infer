@@ -9,7 +9,8 @@ Steps
 1. ``pytest tests/test_deep_cwfs_opd_retriever.py`` on the GPU, including
    ``test_reproduces_original_inference`` (against the original code, extracted from
    ``origin/main``) and ``test_sign_agrees_with_dic`` (prints ``corr(deep, dic)``).
-2. Inference with every checkpoint on every pair of the two test sets:
+2. Inference with the default checkpoint (longer-trained SEA-RAFT medium; ``--checkpoint-glob '*.pth'``
+   for all checkpoints) on every pair of the two test sets:
    - corr(deep OPD, DIC OPD) for each pair (should be > 0);
    - SynthEllips only: correlation of the Deep CWFS displacement channels (y, x) with the
      ground-truth gradient channels (``N_0``, ``N_1``), which checks sign and channel order
@@ -89,18 +90,20 @@ def main():
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--original-ref", default="origin/main", help="git ref holding the original qpi_deep_cwfs code")
     ap.add_argument("--no-maps", action="store_true", help="do not save the OPD maps (.npz, ~60 MB per run)")
-    ap.add_argument("--checkpoint-glob", default="*.pth", help="restrict checkpoints, e.g. '*raft_small*'")
+    ap.add_argument("--checkpoint-glob", default=None,
+                    help="checkpoints to run (default: the Deep CWFS default checkpoint; '*.pth' = all)")
     ap.add_argument("--limit", type=int, default=None, help="only the first N pairs of each set (quick check)")
     ap.add_argument("--skip-pytest", action="store_true")
     args = ap.parse_args()
 
     import torch
     from speckle_opd_retrieval import Setup, get_method, load_image
+    from speckle_opd_retrieval.methods.deep_cwfs.optical_flow_network_builders import DEFAULT_CHECKPOINT
 
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         sys.exit("CUDA not available")
     data = os.path.abspath(args.data)
-    ckpts = sorted(glob.glob(os.path.join(data, "deep_cwfs_model_checkpoints", args.checkpoint_glob)))
+    ckpts = sorted(glob.glob(os.path.join(data, "deep_cwfs_model_checkpoints", args.checkpoint_glob or DEFAULT_CHECKPOINT)))
     if not ckpts:
         sys.exit(f"no checkpoints in {data}/deep_cwfs_model_checkpoints")
 
