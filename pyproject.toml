@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "speckle-opd-retrieval"
+version = "0.1.0"
+description = "OPD retrieval from speckle / coded wavefront sensing image pairs with interchangeable methods (DIC, Deep CWFS, …)"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Syed Muhammad Kazim" }]
+dependencies = ["numpy>=1.22", "scipy>=1.8", "tifffile>=2022.5", "matplotlib>=3.5", "pillow>=9"]
+
+[project.optional-dependencies]
+deep = ["torch>=1.13", "torchvision>=0.14"]
+test = ["pytest>=7"]
+
+[project.scripts]
+speckle-opd-retrieval = "speckle_opd_retrieval.command_line_interface:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

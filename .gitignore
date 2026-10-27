@@ -1,2 +1,11 @@
-ckpts/
+__pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+results/*
+!results/deep_cwfs_gpu_server/
+*.pth
+archive/
+.claude/
+CLAUDE.md
+.cache/
