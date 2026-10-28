@@ -28,6 +28,10 @@ from .patch_tiling_and_stitching import pad_to, stitch, tile_grid
 
 log = logging.getLogger(__name__)
 
+# The networks were trained on ~500 × 500 px inputs and their flow values are not rescaled after resizing
+# (as in the original script), so every patch should be 500 × 500 px: smaller patches are padded up to it.
+TRAINING_INPUT_SIZE = 500
+
 
 class DeepCWFS(OPDRetriever):
     """Deep coded wavefront sensing.
@@ -40,9 +44,13 @@ class DeepCWFS(OPDRetriever):
         model: ``raft_large`` | ``raft_small`` | ``sea_raft_medium`` | ``sea_raft_small``; guessed from the
             checkpoint name if omitted. A model without a checkpoint loads that model's newest checkpoint.
         device: ``None`` (CUDA if available, else CPU), ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``.
-        patch_size: square tile size [px] (networks were trained on ~500 px crops); smaller
-            images are mirror-padded up to it.
+        patch_size: square tile size [px]; smaller images are mirror-padded up to it. Keep it at
+            most 500 (the networks were trained on 500 × 500 px inputs).
         overlap: tile overlap [px].
+        pad_size: each patch smaller than this is reflect-padded up to ``pad_size`` × ``pad_size``
+            before the network and the flow is cropped back (default 500, the training input size).
+            Without it, a smaller patch is magnified more by the network's resize and the
+            displacement comes out too large (×1.8 for 256 px patches). ``None`` disables it.
         blend: ``"mean"`` (original) or ``"feather"`` (linear ramps, fewer seams).
         batch_size: tiles per forward pass.
         iters: refinement iterations (default 12 for RAFT, 4 for SEA-RAFT, as originally).
@@ -54,14 +62,18 @@ class DeepCWFS(OPDRetriever):
 
     def __init__(self, setup: Setup, checkpoint: Optional[str] = None, model: Optional[str] = None,
                  device: Optional[str] = None, patch_size: int = 500, overlap: int = 150, blend: str = "mean",
-                 batch_size: int = 1, iters: Optional[int] = None, integrator: Optional[str] = None):
+                 batch_size: int = 1, iters: Optional[int] = None, integrator: Optional[str] = None,
+                 pad_size: Optional[int] = TRAINING_INPUT_SIZE):
         """Resolve the checkpoint and load the network onto the device (see the class docstring for arguments)."""
         if not 0 <= int(overlap) < int(patch_size):
             raise ValueError("need 0 <= overlap < patch_size")
         checkpoint = resolve_checkpoint(model, checkpoint)  # recorded in params for provenance
         super().__init__(setup, integrator=integrator, device=device, checkpoint=checkpoint, model=model,
                          patch_size=int(patch_size), overlap=int(overlap), blend=blend,
-                         batch_size=max(1, int(batch_size)), iters=iters)
+                         batch_size=max(1, int(batch_size)), iters=iters, pad_size=pad_size)
+        if pad_size is None and int(patch_size) != TRAINING_INPUT_SIZE:
+            log.warning("deep_cwfs: patch_size %d without padding; the networks expect %d px inputs",
+                        int(patch_size), TRAINING_INPUT_SIZE)
         self.flow_model = build_flow_model(model, checkpoint, device=self.device, iters=iters)
         self.params["model"] = self.flow_model.name
 
@@ -87,11 +99,20 @@ class DeepCWFS(OPDRetriever):
             # normalise both tiles by the maximum of the reference tile
             scale = ref_tiles.reshape(len(batch), -1).amax(dim=1)[:, None, None]
             scale[scale == 0] = 1.0
-            flow_tiles = self.flow_model(ref_tiles / scale, spec_tiles / scale)
+            ref_tiles = self.pad_tiles(ref_tiles / scale)
+            spec_tiles = self.pad_tiles(spec_tiles / scale)
+            flow_tiles = self.flow_model(ref_tiles, spec_tiles)[..., :P, :P]  # crop the padding
             flows.extend(flow_tiles.to(self.dtype))
 
         flow = stitch(flows, corners, tuple(ref.shape), p["overlap"], p["blend"])
         return flow[:, :H, :W]  # remove the padding
+
+    def pad_tiles(self, tiles: torch.Tensor) -> torch.Tensor:
+        """Reflect-pad (B, P, P) tiles at the bottom/right up to ``pad_size`` (no change if ``pad_size`` is None or ≤ P)."""
+        size = self.params["pad_size"]
+        if size is None or tiles.shape[-1] >= size:
+            return tiles
+        return torch.stack([pad_to(tile, size, size) for tile in tiles])
 
     def _estimate(self, reference, specimen) -> MethodOutput:
         """Network flow -> displacement in the package convention."""

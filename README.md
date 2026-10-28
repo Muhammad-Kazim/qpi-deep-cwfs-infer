@@ -120,6 +120,15 @@ Method parameters are passed with `--param name=value`. With several methods, ea
 Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, the bias stays below 0.04 px.
 
 **Deep CWFS** (`methods/deep_cwfs/`):
+
+> **Input size: the networks expect 500 × 500 px.** They were trained on 500 × 500 px inputs, and the flow values are
+> not rescaled after the network's internal resize (as in the original script). A patch of another size is magnified
+> differently and gives wrong displacement magnitudes (256 px patches: about 1.8× too large). Therefore:
+> - keep `patch_size` at 500 (default); larger images are tiled into 500 px patches;
+> - smaller images, and patches smaller than 500 px, are reflect-padded up to 500 × 500 (`pad_size=500`, default),
+>   and the result is cropped back. `pad_size=None` switches the padding off;
+> - do not use patches larger than 500 px.
+
 - Tiles of `patch_size` (500) with `overlap` (150). The last tile moves inward so all tiles hold real data, any image shape works, and small images get one mirror-pad. Blending: `mean` or `feather`.
 - Each tile is normalised by its reference maximum, then resized to the network input (RAFT 520×960, SEA-RAFT 540×960).
 - Integration: default `poisson_neumann` like every method; `integrator="poisson_zero_boundary"` is the original

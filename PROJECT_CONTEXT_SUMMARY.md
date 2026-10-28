@@ -127,3 +127,10 @@ An earlier FFT-correlation version normalised only per window. It had 0.25 px wo
 4. Add a CLI (`run` with multiple methods and specimen globs, plus JSON config with the legacy key mapping).
 5. Benchmark DIC vs classical vs deep on synthellips (RMSE vs ground truth) and on real bead data.
 6. Delete `archive/` once everything is ported and tested.
+
+## Deep CWFS input size (28 Oct 2026)
+The networks expect 500 × 500 px inputs: flow values are not rescaled after the internal resize, so patches of another
+size give wrong magnitudes (GPU example run: 256 px patches ≈ 1.8× too large). For now every patch smaller than 500 px is
+reflect-padded to 500 × 500 (`pad_size=500`, default) and the flow cropped back; `patch_size` stays 500. A proper fix
+(rescaling the flow by patch size / training size) is deferred until the exact training crop size is confirmed.
+

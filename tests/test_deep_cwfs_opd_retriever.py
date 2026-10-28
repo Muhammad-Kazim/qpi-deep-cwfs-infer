@@ -62,6 +62,29 @@ def test_shapes_and_interface_with_random_weights(tmp_path, name):
     assert r.method == "deep_cwfs" and r.params["model"] == name
 
 
+@pytest.mark.parametrize("pad_size, network_input", [(500, 500), (None, 256)])
+def test_patches_are_padded_to_the_training_input_size(tmp_path, pad_size, network_input):
+    """Patches smaller than ``pad_size`` reach the network as pad_size × pad_size; the flow is cropped back."""
+    m = get_method("deep_cwfs", Setup(3.45e-6, 2.48e-3), checkpoint=_random_checkpoint(tmp_path, "sea_raft_medium"),
+                   device=DEVICE, patch_size=256, overlap=64, pad_size=pad_size)
+    shapes = []
+
+    def fake_network(ref, spec):
+        """Record the input shape and return a constant flow of 1 px (row) and 2 px (column)."""
+        shapes.append(tuple(ref.shape))
+        flow = torch.ones((ref.shape[0], 2) + tuple(ref.shape[-2:]), device=ref.device)
+        flow[:, 1] = 2.0
+        return flow
+
+    fake_network.name = "fake"
+    m.flow_model = fake_network
+    ref = speckle((300, 420))
+    r = m.retrieve(ref, ref)
+    assert all(shape[-2:] == (network_input, network_input) for shape in shapes)
+    assert np.allclose(r.displacement[0], -1.0) and np.allclose(r.displacement[1], -2.0)
+    assert r.params["pad_size"] == pad_size
+
+
 def test_reproduces_original_inference():
     """Same OPD as the original qpi-deep-cwfs-infer script (single-patch branch) on real data; the
     original -px²/z·∫flow equals the textbook OPD with displacement = -flow, so no sign option is needed."""
