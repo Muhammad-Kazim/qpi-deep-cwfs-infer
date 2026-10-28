@@ -7,6 +7,7 @@ Examples::
         --param saturation=65520 -o results
     speckle-opd-retrieval run -m deep_cwfs -r ref.tiff -s spec.tiff --pixel-size 3.45e-6 --distance 2.48e-3
         # default checkpoint (longer-trained SEA-RAFT medium); --param model=raft_large or --param checkpoint=... for others
+    speckle-opd-retrieval run ... --param integrator=poisson_neumann   # see `speckle-opd-retrieval methods`
     speckle-opd-retrieval run -c config.json        # same keys as the flags; flags override the file
     speckle-opd-retrieval run ... --device cpu      # default: CUDA if available, else CPU
 
@@ -26,7 +27,7 @@ import os
 import sys
 
 from . import __version__
-from .core import Setup, available_methods, crop, get_method_class, load_image
+from .core import Setup, available_integrators, available_methods, crop, get_method_class, load_image
 
 
 def _parse_param(s: str):
@@ -45,7 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="speckle-opd-retrieval", description="OPD retrieval from speckle (CWFS) image pairs.")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("methods", help="list available methods")
+    sub.add_parser("methods", help="list available methods and integrators")
     r = sub.add_parser("run", help="retrieve OPD for one reference and one or more specimen images")
     S = argparse.SUPPRESS
     r.add_argument("-c", "--config", help="JSON file with any of the keys below (and 'params': {...})")
@@ -121,8 +122,12 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.WARNING - 10 * min(getattr(args, "verbose", 0), 2),
                         format="%(levelname)s %(name)s: %(message)s")
     if args.cmd == "methods":
+        print("methods (-m):")
         for k, d in available_methods().items():
-            print(f"{k:12s} {d}")
+            print(f"  {k:22s} {d}")
+        print("integrators (--param integrator=...):")
+        for k, d in available_integrators().items():
+            print(f"  {k:22s} {d}")
         return 0
     return _run(args)
 

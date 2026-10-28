@@ -9,7 +9,7 @@ qpi-deep-cwfs-infer code if `archive/` is absent (see `gpu_server/`).
 | `conftest.py` | helpers: synthetic speckle, known phase bump, forward warp, data paths, test device |
 | `reference_numpy_implementations_validated.py` | frozen NumPy/SciPy copy of the validated DIC and integrators (before the torch port); reference only, do not edit |
 | `test_torch_ports_match_validated_numpy_reference.py` | torch DIC grid, DIC retriever, grid interpolation, integrators and padding reproduce the NumPy reference (≤1e-10) |
-| `test_core_integration_setup_and_result.py` | integrators (exact DCT, CG), `Setup` scaling, result saving |
+| `test_core_integration_setup_and_result.py` | integrators (exact Neumann, zero boundary, names), `Setup` scaling, result saving |
 | `test_dic_zncc_displacement_on_synthetic_speckle.py` | DIC core accuracy on known shifts and amplitude-only changes |
 | `test_opd_sign_convention_physical_speckle_simulation.py` | OPD sign from physics: diffuser + thin object, angular-spectrum propagation, DIC → higher RI positive, lower RI negative (textbook) |
 | `test_dic_opd_retriever_end_to_end.py` | DIC via the common interface: phase in → OPD out (sign, scale), validation |

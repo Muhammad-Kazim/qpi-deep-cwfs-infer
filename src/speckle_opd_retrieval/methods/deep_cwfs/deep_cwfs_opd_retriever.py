@@ -2,7 +2,8 @@
 
 Ported from ``archive/speckle_qpi_package_classical_and_deep_cwfs_to_port`` (which reproduces the
 original ``qpi-deep-cwfs-infer`` inference) with two changes: the shared interface / result type of this
-package, and integration via ``core`` (``cg`` = NumPy port of the original solver, default; ``dct`` faster).
+package, and integration via ``core`` (default ``poisson_neumann``; ``integrator="poisson_zero_boundary"`` is the original
+script's solver and reproduces its OPD exactly).
 
 Sign
 ----
@@ -45,11 +46,11 @@ class DeepCWFS(OPDRetriever):
         blend: ``"mean"`` (original) or ``"feather"`` (linear ramps, fewer seams).
         batch_size: tiles per forward pass.
         iters: refinement iterations (default 12 for RAFT, 4 for SEA-RAFT, as originally).
-        integrator: ``"cg"`` (default; original solver) or ``"dct"``.
+        integrator: ``"poisson_neumann"`` (default), ``"poisson_zero_boundary"`` (the original script's
+            solver), ``"fourier_mirror"`` or ``"fourier_asdi"`` (see ``available_integrators()``).
     """
 
     name = "deep_cwfs"
-    default_integrator = "cg"
 
     def __init__(self, setup: Setup, checkpoint: Optional[str] = None, model: Optional[str] = None,
                  device: Optional[str] = None, patch_size: int = 500, overlap: int = 150, blend: str = "mean",

@@ -14,6 +14,19 @@ Everything (methods, Poisson integration, tiling) runs in **PyTorch, on the CPU 
 `device=` (`None` = CUDA if available, else CPU; or `"cpu"`, `"cuda"`, `"cuda:1"`, `"mps"`). Computation is float64
 (float32 on MPS); inputs may be NumPy arrays or tensors, results are NumPy arrays on the CPU.
 
+The displacement is integrated into OPD by one of four integrators; every method takes `integrator=`:
+
+| `integrator=` | Border | Notes |
+|---|---|---|
+| `"poisson_neumann"` (**default**) | no assumption on the values | least-squares Poisson (DCT), fast, keeps tilts |
+| `"poisson_zero_boundary"` | OPD = 0 on the border | conjugate gradients; the original Deep CWFS solver (slow; distorts objects touching the border) |
+| `"fourier_mirror"` | gradients mirror-padded by N/2, signs kept | FFT; loses tilts |
+| `"fourier_asdi"` | anti-symmetric derivative extension | FFT; most accurate for point-sampled gradients |
+
+`available_integrators()` (or `speckle-opd-retrieval methods`) lists them; `integrate(displacement, name)` integrates
+any field. Compared, with how to remove piston/tilt before an RMSE, in
+[`notebooks/integration_boundary_conditions_explained.ipynb`](notebooks/integration_boundary_conditions_explained.ipynb).
+
 ## Install
 `pip install -e` installs into the *active* environment and does not create one, so create and activate
 an environment first. Run everything from the project root.
@@ -83,12 +96,12 @@ results = dic.retrieve_many(ref, [spec1, spec2, spec3])   # time series, same se
 - `opd_gradient = pixel_size/distance · d`
 
 **How each method plugs in:**
-- **The base class** `OPDRetriever` handles input checks, integration (`integrator="dct"` or `"cg"`), physical scaling, timing and the result type.
+- **The base class** `OPDRetriever` handles input checks, integration (`integrator=`, default `"poisson_neumann"`), physical scaling, timing and the result type.
 - **A method only implements** `_estimate(reference, specimen) → MethodOutput(displacement, [phi], [amplitude], info)`.
 
 ## Command line
 ```bash
-speckle-opd-retrieval methods
+speckle-opd-retrieval methods                 # lists methods and integrators
 speckle-opd-retrieval run -m dic -m deep_cwfs -r ref.tiff -s "frames/*.tiff" \
     --pixel-size 3.45e-6 --distance 2.48e-3 \
     --param saturation=65520 -o results            # Deep CWFS: default checkpoint, or --param model=raft_large
@@ -102,14 +115,15 @@ Method parameters are passed with `--param name=value`. With several methods, ea
 2. Saturated pixels are masked.
 3. Exact weighted ZNCC is computed at every integer shift within ±`search`.
 4. Sub-pixel peak by a parabolic fit; outliers by the median test.
-5. The grid result is bilinearly upsampled to full resolution, then integrated (DCT).
+5. The grid result is bilinearly upsampled to full resolution, then integrated (default `poisson_neumann`).
 
 Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, the bias stays below 0.04 px.
 
 **Deep CWFS** (`methods/deep_cwfs/`):
 - Tiles of `patch_size` (500) with `overlap` (150). The last tile moves inward so all tiles hold real data, any image shape works, and small images get one mirror-pad. Blending: `mean` or `feather`.
 - Each tile is normalised by its reference maximum, then resized to the network input (RAFT 520×960, SEA-RAFT 540×960).
-- Integration: CG by default, matching the original.
+- Integration: default `poisson_neumann` like every method; `integrator="poisson_zero_boundary"` is the original
+  script's solver and reproduces its OPD exactly (`test_reproduces_original_inference`).
 - **Sign:** the networks were trained on labels equal to −d, so `displacement = −flow` (fixed). It agrees with DIC
   (corr +0.98), and the textbook OPD = px²/z·∫d = −px²/z·∫flow is exactly the original script's output.
 
@@ -122,8 +136,8 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 | `requirements-dev.txt` | development: runtime + `[dev]` (pytest, huggingface_hub, jupyterlab, ipykernel, nbformat, nbclient) |
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |
-| `examples/` | runnable scripts |
-| `notebooks/` | explanatory notebooks (OPD sign convention) |
+| `examples/` | runnable examples (method comparison script; stitching and integrators notebook) |
+| `notebooks/` | explanatory notebooks (OPD sign convention; integrators and boundary conditions) |
 | `gpu_server/` | Deep CWFS tests + inference on the GPU server; results are copied back with rsync into `results/deep_cwfs_gpu_server/` |
 | `results/` | outputs, git-ignored |
 | `archive/` | original reference code (classical CWFS still to port), read-only, delete once the port is complete |

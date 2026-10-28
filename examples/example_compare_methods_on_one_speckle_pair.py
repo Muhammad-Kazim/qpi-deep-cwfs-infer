@@ -2,6 +2,7 @@
 
     python examples/example_compare_methods_on_one_speckle_pair.py REF.tiff SPEC.tiff \
         --methods dic deep_cwfs        # Deep CWFS: default checkpoint unless --checkpoint is given
+        --integrator fourier_asdi      # optional; default poisson_neumann
 
 Every method is used through the same interface: get_method(name, setup, **params).retrieve(ref, spec).
 """
@@ -10,7 +11,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 
-from speckle_opd_retrieval import Setup, get_method, load_image
+from speckle_opd_retrieval import DEFAULT_INTEGRATOR, Setup, available_integrators, get_method, load_image
 
 ap = argparse.ArgumentParser()
 ap.add_argument("reference")
@@ -19,6 +20,8 @@ ap.add_argument("--methods", nargs="+", default=["dic"])
 ap.add_argument("--pixel-size", type=float, default=3.45e-6)
 ap.add_argument("--distance", type=float, default=2.48e-3)
 ap.add_argument("--checkpoint", default=None, help="deep_cwfs checkpoint (default: longer-trained SEA-RAFT medium)")
+ap.add_argument("--integrator", default=DEFAULT_INTEGRATOR, choices=sorted(available_integrators()),
+                help="displacement -> OPD integrator (default: %(default)s)")
 ap.add_argument("--device", default=None, help="cpu, cuda, ... (default: CUDA if available, else CPU)")
 ap.add_argument("--saturation", type=float, default=65520)
 ap.add_argument("--out", default=None, help="folder to save results (optional)")
@@ -26,8 +29,8 @@ a = ap.parse_args()
 
 setup = Setup(a.pixel_size, a.distance)
 ref, spec = load_image(a.reference), load_image(a.specimen)
-params = {"dic": dict(saturation=a.saturation, device=a.device),
-          "deep_cwfs": dict(checkpoint=a.checkpoint, device=a.device)}
+params = {"dic": dict(saturation=a.saturation, device=a.device, integrator=a.integrator),
+          "deep_cwfs": dict(checkpoint=a.checkpoint, device=a.device, integrator=a.integrator)}
 
 results = {}
 for name in a.methods:

@@ -17,7 +17,7 @@ data/                                  shared, READ-ONLY raw measurements (one f
 speckle_opd_retrieval/                 this project
   src/speckle_opd_retrieval/
     core/                              shared: Setup/RetrievalResult, OPDRetriever interface + lazy method registry,
-                                       Poisson integration (dct, cg), device helpers, image I/O
+                                       integration (poisson_neumann default, poisson_zero_boundary, fourier_mirror, fourier_asdi), device helpers, image I/O
     methods/dic/                       DIC retriever + ZNCC core
     methods/deep_cwfs/                 Deep CWFS retriever, network builders, tiling, vendored SEA-RAFT
     command_line_interface.py          `speckle-opd-retrieval methods | run`
@@ -41,7 +41,7 @@ res.opd [m] (H,W) · res.opd_gradient (2,H,W) · res.displacement [px] (2,H,W) �
 - **Everything is PyTorch** (since 28 Oct 2026): methods, integration and tiling run on the retriever's `device`, in
   float64 (float32 on MPS). Inputs: NumPy or tensors; `RetrievalResult`: NumPy on the CPU. The torch DIC and integrators
   reproduce the validated NumPy versions to ≤1e-10 (frozen copy in `tests/reference_numpy_implementations_validated.py`).
-- **The base class** `OPDRetriever` does input checks, device placement, integration (`integrator="dct"|"cg"`), scaling, timing and the result.
+- **The base class** `OPDRetriever` does input checks, device placement, integration (`integrator=`, one default for all methods: `"poisson_neumann"`; others listed by `available_integrators()`; since 28 Oct 2026, before that Deep CWFS defaulted to the original zero-boundary CG solver), scaling, timing and the result.
 - **A method implements** `_estimate(ref, spec) -> MethodOutput(displacement, phi=None, amplitude=None, info)`.
 - **To add a method:** create `methods/<name>/` and add one line to `METHODS`.
 
@@ -49,7 +49,7 @@ res.opd [m] (H,W) · res.opd_gradient (2,H,W) · res.displacement [px] (2,H,W) �
 | Component | State |
 |---|---|
 | Core interface, registry, integration, I/O, CLI | **Done, tested**, torch (CPU/GPU) |
-| DIC | **Done, tested**, torch (CPU/GPU), identical to the validated NumPy version. The grid result is bilinearly upsampled to full resolution before DCT integration. |
+| DIC | **Done, tested**, torch (CPU/GPU), identical to the validated NumPy version. The grid result is bilinearly upsampled to full resolution before integration. |
 | Deep CWFS | **Done.** Reproduces the original script (GPU run 27 Oct 2026); sign agrees with DIC (corr +0.98). |
 | Classical CWFS | To port into `methods/classical_cwfs/`, returning `phi` and `amplitude` via `MethodOutput`. |
 
@@ -96,7 +96,7 @@ Defaults: window 32 px, step 8 px, search ±7 px.
 
 An earlier FFT-correlation version normalised only per window. It had 0.25 px worst-case amplitude bias and 8.5% outliers on real data (3.5% with the new method).
 
-**Integration:** neighbouring samples are averaged to gradients between grid nodes, multiplied by the grid step, then integrated with the DCT least-squares solver. Avoid large ramps: a small constant displacement bias (0.1 px over 1000 px) becomes about 0.5 µm of OPD tilt. When the specimen leaves the frame, the Neumann boundary condition distorts the edges.
+**Integration:** neighbouring samples are averaged to gradients between grid nodes, multiplied by the grid step, then integrated (default: Neumann least squares, `poisson_neumann`). Avoid large ramps: a small constant displacement bias (0.1 px over 1000 px) becomes about 0.5 µm of OPD tilt. Objects cut by the frame are kept by `poisson_neumann` and `fourier_asdi` but distorted by `poisson_zero_boundary` (synthetic test, `notebooks/integration_boundary_conditions_explained.ipynb`). For point-sampled gradients `fourier_asdi` is the most accurate (≤5e-4 vs ~2 % for `poisson_neumann`, a half-pixel shift); evaluate with piston and tilt removed, or on the gradients.
 
 ## Test and development data (in `Claude+Projects/data/`)
 - `2025-12-03_synthellips_v0_synthetic_cwfs_pairs_with_ground_truth/`: 10 simulated pairs with ground-truth gradients and amplitude. **Use for method validation and the sign test.**

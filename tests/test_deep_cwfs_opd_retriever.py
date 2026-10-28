@@ -83,7 +83,9 @@ def test_reproduces_original_inference():
         flows = (model(a, b, **settings)["final"] if "sea_raft" in name else model(a, b)[-1]).cpu()
         f0, f1 = torchvision.transforms.functional.resize(flows, size=list(I0.shape))[0]
         legacy = -(px**2) / z * utils.integrate_flow_field_torch(torch.stack([f1, f0], dim=2)).double().numpy()
-    res = get_method("deep_cwfs", Setup(px, z), checkpoint=ck, device=DEVICE, patch_size=I0.shape[0]).retrieve(I0, I1)
+    # the original script integrates with zero boundary values
+    res = get_method("deep_cwfs", Setup(px, z), checkpoint=ck, device=DEVICE, patch_size=I0.shape[0],
+                     integrator="poisson_zero_boundary").retrieve(I0, I1)
     legacy = legacy - legacy.mean()
     np.testing.assert_allclose(res.opd, legacy, atol=1e-3 * np.abs(legacy).max())
 

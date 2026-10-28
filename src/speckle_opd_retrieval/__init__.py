@@ -15,14 +15,19 @@ All methods share one interface::
 
 Everything runs in PyTorch: ``device=None`` (default) uses CUDA if available, else the CPU; pass
 ``device="cpu"``, ``"cuda:1"``, … to choose. Results are NumPy arrays on the CPU.
-``available_methods()`` lists the methods; each lives in ``methods/<name>/``.
+``available_methods()`` lists the methods; each lives in ``methods/<name>/``. ``available_integrators()`` lists
+the displacement-to-OPD integrators; every method takes ``integrator=`` (default ``"poisson_neumann"``;
+also ``"poisson_zero_boundary"``, ``"fourier_mirror"``, ``"fourier_asdi"``).
 """
-from .core import (MethodOutput, OPDRetriever, RetrievalResult, Setup, available_methods, crop, get_method,
-                   get_method_class, integrate, integrate_cg, integrate_dct, load_image, register,
-                   resolve_device, retrieve, save_result)
+from .core import (DEFAULT_INTEGRATOR, MethodOutput, OPDRetriever, RetrievalResult, Setup, available_integrators,
+                   available_methods, crop, get_method, get_method_class, integrate, integrate_fourier_asdi,
+                   integrate_fourier_mirror, integrate_poisson_neumann, integrate_poisson_zero_boundary, load_image,
+                   register, resolve_device, retrieve, save_result)
 
 __version__ = "0.1.0"
 
 __all__ = ["Setup", "RetrievalResult", "OPDRetriever", "MethodOutput", "available_methods", "get_method",
-           "get_method_class", "register", "retrieve", "integrate", "integrate_dct", "integrate_cg",
+           "get_method_class", "register", "retrieve", "DEFAULT_INTEGRATOR", "available_integrators", "integrate",
+           "integrate_poisson_neumann", "integrate_poisson_zero_boundary", "integrate_fourier_mirror",
+           "integrate_fourier_asdi",
            "load_image", "crop", "save_result", "resolve_device"]

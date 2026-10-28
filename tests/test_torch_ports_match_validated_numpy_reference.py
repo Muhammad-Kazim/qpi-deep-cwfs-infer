@@ -5,7 +5,8 @@ import pytest
 import torch
 
 import reference_numpy_implementations_validated as ref
-from speckle_opd_retrieval import Setup, get_method, integrate_cg, integrate_dct
+from speckle_opd_retrieval import (Setup, available_integrators, get_method, integrate, integrate_poisson_neumann,
+                                   integrate_poisson_zero_boundary)
 from speckle_opd_retrieval.methods.deep_cwfs.patch_tiling_and_stitching import pad_to
 from speckle_opd_retrieval.methods.dic import grid_to_full_resolution, zncc_displacement_grid
 from conftest import DEVICE, bump, speckle, warp
@@ -15,14 +16,16 @@ TOL = 1e-10
 
 def test_integrators_match(rng):
     gy, gx = rng.standard_normal((2, 97, 131))
-    np.testing.assert_allclose(integrate_dct(gy, gx, device=DEVICE), ref.integrate_dct(gy, gx), atol=TOL)
-    np.testing.assert_allclose(integrate_cg(gy, gx, device=DEVICE), ref.integrate_cg(gy, gx), atol=TOL)
+    np.testing.assert_allclose(integrate_poisson_neumann(gy, gx, device=DEVICE), ref.integrate_dct(gy, gx), atol=TOL)
+    np.testing.assert_allclose(integrate_poisson_zero_boundary(gy, gx, device=DEVICE), ref.integrate_cg(gy, gx), atol=TOL)
 
 
-def test_integrators_keep_tensors_on_device(rng):
+@pytest.mark.parametrize("name", sorted(available_integrators()))
+def test_integrators_keep_tensors_on_device(rng, name):
     g = torch.tensor(rng.standard_normal((2, 40, 50)), device=DEVICE)
-    phi = integrate_dct(g[0], g[1])
+    phi = integrate(g, name)
     assert isinstance(phi, torch.Tensor) and phi.device.type == torch.device(DEVICE).type
+    assert phi.shape == (40, 50) and phi.dtype == torch.float64
 
 
 @pytest.mark.parametrize("kw", [dict(search=5), dict(search=7, sat="p99"), dict(window=24, step=4, search=6, sigma=4.0)],

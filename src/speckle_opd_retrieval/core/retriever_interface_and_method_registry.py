@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 
 from .optical_setup_and_retrieval_result import RetrievalResult, Setup
-from .poisson_integration_gradient_to_opd import integrate
+from .poisson_integration_gradient_to_opd import DEFAULT_INTEGRATOR, INTEGRATORS, integrate
 from .torch_device_and_tensor_helpers import as_tensor, resolve_device, to_numpy, working_dtype
 
 # OPD sign (textbook): OPD = ∫(n - n_medium) dz, positive for an object of higher RI (phase lag,
@@ -47,22 +47,24 @@ class MethodOutput:
 class OPDRetriever:
     """Base class: ``retrieve(reference, specimen) -> RetrievalResult``.
 
-    Subclasses set ``name`` and ``default_integrator`` and implement ``_estimate``.
+    Subclasses set ``name`` and implement ``_estimate``.
     Constructor keyword arguments are stored in ``self.params`` (provenance),
-    ``integrator`` ("dct" or "cg") chooses the Poisson solver and ``device`` where everything
+    ``integrator`` (a name from :func:`available_integrators`; default ``"poisson_neumann"``) chooses how the
+    displacement is integrated and ``device`` where everything
     runs (``None``: CUDA if available, else CPU). ``_estimate`` receives the images as tensors on
     ``self.device`` in ``self.dtype`` (float64; float32 on MPS); the result is NumPy on the CPU.
     """
 
     name: str = ""
-    default_integrator: str = "dct"
 
     def __init__(self, setup: Setup, integrator: Optional[str] = None, device: Optional[str] = None, **params):
         """Store the setup, integrator, device and method parameters (``params``, kept for provenance)."""
         if not isinstance(setup, Setup):
             raise TypeError("setup must be a speckle_opd_retrieval.Setup")
         self.setup = setup
-        self.integrator = integrator or self.default_integrator
+        self.integrator = integrator or DEFAULT_INTEGRATOR
+        if self.integrator not in INTEGRATORS:
+            raise ValueError(f"unknown integrator '{self.integrator}'; available: {sorted(INTEGRATORS)}")
         self.device = resolve_device(device)
         self.dtype = working_dtype(self.device)
         self.params = dict(params, integrator=self.integrator, device=str(self.device))

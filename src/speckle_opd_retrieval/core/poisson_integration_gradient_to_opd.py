@@ -1,8 +1,24 @@
-"""Integrate a displacement / gradient field into a scalar map (least-squares Poisson solve), in torch.
+"""Integrate a displacement / gradient field into a scalar map (the OPD up to scaling), in torch.
 
-Both solvers take derivatives (d/dy, d/dx) sampled on the pixel grid and return the
-mean-subtracted potential phi (same units as the gradient × pixels). They run on the device of
-their input (or ``device``). NumPy input gives NumPy output (float64), tensor input a tensor.
+Integrators (name -> function), chosen with ``integrator=`` on every method or ``integrate(..., method=)``:
+
+- ``"poisson_neumann"`` (:func:`integrate_poisson_neumann`, **default**): least-squares Poisson solve with
+  Neumann boundaries (no assumption on the values at the image border), solved directly with a DCT.
+  Exact for forward differences, fast; keeps tilts and objects cut by the border.
+- ``"poisson_zero_boundary"`` (:func:`integrate_poisson_zero_boundary`): Poisson solve with the OPD forced
+  to 0 on the border, by conjugate gradients. The original Deep CWFS solver; suppresses ramps but distorts
+  objects that touch the border, and is slower.
+- ``"fourier_mirror"`` (:func:`integrate_fourier_mirror`): Fourier (spectral) integration after padding the
+  gradients by half the image size on every side by mirroring, as if the phase were mirrored to make it
+  periodic, but without changing the gradient signs. A tilt (mean gradient) is lost.
+- ``"fourier_asdi"`` (:func:`integrate_fourier_asdi`): Fourier integration after the anti-symmetric
+  derivative extension (ASDI, Bon et al., Appl. Opt. 51, 5698 (2012)): the mirrored copies of each gradient
+  get the sign the derivative of a mirrored phase has, so the extended field is a true periodic gradient.
+
+``notebooks/integration_boundary_conditions_explained.ipynb`` compares them. All integrators take derivatives
+(d/dy, d/dx) sampled on the pixel grid and return the mean-subtracted potential phi (same units as the
+gradient × pixels). They run on the device of their input (or ``device``). NumPy input gives NumPy output
+(float64), tensor input a tensor.
 """
 
 from __future__ import annotations
@@ -15,8 +31,8 @@ import torch.nn.functional as F
 from .torch_device_and_tensor_helpers import DeviceLike, as_tensor, to_numpy, working_dtype
 
 
-def dct_solve(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
-    """Neumann least-squares integration of two (H, W) tensors (see :func:`integrate_dct`)."""
+def poisson_neumann_solve(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
+    """Neumann least-squares integration of two (H, W) tensors (see :func:`integrate_poisson_neumann`)."""
     H, W = gx.shape
 
     # divergence of the forward differences (last column / row ignored)
@@ -39,8 +55,8 @@ def dct_solve(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
     return phi - phi.mean()
 
 
-def cg_solve(gy: torch.Tensor, gx: torch.Tensor, n_iter: int = 2500, tol: float = 1e-15) -> torch.Tensor:
-    """Conjugate-gradient Poisson solve of two (H, W) tensors (see :func:`integrate_cg`)."""
+def poisson_zero_boundary_solve(gy: torch.Tensor, gx: torch.Tensor, n_iter: int = 2500, tol: float = 1e-15) -> torch.Tensor:
+    """Conjugate-gradient Poisson solve of two (H, W) tensors (see :func:`integrate_poisson_zero_boundary`)."""
     # right-hand side: minus the divergence (forward differences, last difference repeated)
     dx = torch.diff(gx, dim=1)
     dx = torch.cat([dx, dx[:, -1:]], dim=1)
@@ -76,24 +92,24 @@ def cg_solve(gy: torch.Tensor, gx: torch.Tensor, n_iter: int = 2500, tol: float 
     return x - x.mean()
 
 
-def integrate_dct(grad_y, grad_x, device: DeviceLike = None):
+def integrate_poisson_neumann(grad_y, grad_x, device: DeviceLike = None):
     """Direct least-squares integration with Neumann boundaries (DCT, computed with FFTs).
 
     ``grad_y[i, j] = phi[i+1, j] - phi[i, j]`` and ``grad_x[i, j] = phi[i, j+1] - phi[i, j]``
     (forward differences; the last row / column is ignored). Exact for such input and fast
     on large images.
     """
-    return _run_solver(dct_solve, grad_y, grad_x, device)
+    return _run_solver(poisson_neumann_solve, grad_y, grad_x, device)
 
 
-def integrate_cg(grad_y, grad_x, n_iter: int = 2500, tol: float = 1e-15, device: DeviceLike = None):
+def integrate_poisson_zero_boundary(grad_y, grad_x, n_iter: int = 2500, tol: float = 1e-15, device: DeviceLike = None):
     """Conjugate-gradient Poisson solve with zero boundary values.
 
     ``integrate_flow_field_torch`` from the original deep-CWFS repository (same discretisation:
     forward-difference divergence with the last difference repeated, 5-point Laplacian on interior
     pixels), for one field. Used by Deep CWFS by default to reproduce the original OPD maps.
     """
-    return _run_solver(cg_solve, grad_y, grad_x, device, n_iter=n_iter, tol=tol)
+    return _run_solver(poisson_zero_boundary_solve, grad_y, grad_x, device, n_iter=n_iter, tol=tol)
 
 
 def _run_solver(solver, grad_y, grad_x, device: DeviceLike, **kwargs):
@@ -108,11 +124,90 @@ def _run_solver(solver, grad_y, grad_x, device: DeviceLike, **kwargs):
     return to_numpy(phi)
 
 
-INTEGRATORS = {"dct": integrate_dct, "cg": integrate_cg}
+# name -> (function, one-line description)
+def fourier_integrate(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
+    """Spectral integration of a periodic gradient field: phi_hat = -i (ky gy_hat + kx gx_hat) / |k|²."""
+    H, W = gx.shape
+    ky = 2 * math.pi * torch.fft.fftfreq(H, device=gx.device, dtype=gx.dtype)[:, None]
+    kx = 2 * math.pi * torch.fft.fftfreq(W, device=gx.device, dtype=gx.dtype)[None, :]
+    k_squared = kx ** 2 + ky ** 2
+    k_squared[0, 0] = 1.0  # the mean is undetermined; set to 0 below
+    spectrum = -1j * (ky * torch.fft.fft2(gy) + kx * torch.fft.fft2(gx)) / k_squared
+    spectrum[0, 0] = 0.0
+    return torch.fft.ifft2(spectrum).real
 
 
-def integrate(displacement, method: str = "dct", device: DeviceLike = None, **kwargs):
-    """Integrate a (2, H, W) displacement field ordered (y, x). ``method``: ``"dct"`` or ``"cg"``."""
+def mirror_pad(img: torch.Tensor, pad_y: int, pad_x: int) -> torch.Tensor:
+    """Pad by mirroring (edge pixel repeated): ``pad_y`` rows above and below, ``pad_x`` columns left and right."""
+    img = torch.cat([img[:pad_y].flip(0), img, img[img.shape[0] - pad_y:].flip(0)], dim=0)
+    return torch.cat([img[:, :pad_x].flip(1), img, img[:, img.shape[1] - pad_x:].flip(1)], dim=1)
+
+
+def fourier_mirror_solve(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
+    """Fourier integration of two (H, W) tensors after mirror padding (see :func:`integrate_fourier_mirror`)."""
+    H, W = gx.shape
+    pad_y = H // 2
+    pad_x = W // 2
+    phi = fourier_integrate(mirror_pad(gy, pad_y, pad_x), mirror_pad(gx, pad_y, pad_x))
+    phi = phi[pad_y:pad_y + H, pad_x:pad_x + W]  # crop the original image
+    return phi - phi.mean()
+
+
+def fourier_asdi_solve(gy: torch.Tensor, gx: torch.Tensor) -> torch.Tensor:
+    """Fourier integration of two (H, W) tensors after ASDI extension (see :func:`integrate_fourier_asdi`)."""
+    H, W = gx.shape
+    # mirroring the phase along x flips the sign of d/dx but not of d/dy, and vice versa
+    gx_extended = torch.cat([torch.cat([gx, -gx.flip(1)], dim=1),
+                             torch.cat([gx.flip(0), -gx.flip(0).flip(1)], dim=1)], dim=0)
+    gy_extended = torch.cat([torch.cat([gy, gy.flip(1)], dim=1),
+                             torch.cat([-gy.flip(0), -gy.flip(0).flip(1)], dim=1)], dim=0)
+    phi = fourier_integrate(gy_extended, gx_extended)[:H, :W]
+    return phi - phi.mean()
+
+
+def integrate_fourier_mirror(grad_y, grad_x, device: DeviceLike = None):
+    """Fourier integration after padding the gradients by half the image size on every side by mirroring.
+
+    The padded field is periodic, so the FFT has no wrap-around jumps, but the mirrored gradients keep
+    their sign (a mirrored phase would flip it), so the mean gradient (a tilt) is lost and the
+    result is distorted near the border when the phase has a slope there.
+    """
+    return _run_solver(fourier_mirror_solve, grad_y, grad_x, device)
+
+
+def integrate_fourier_asdi(grad_y, grad_x, device: DeviceLike = None):
+    """Fourier integration with the anti-symmetric derivative extension (ASDI).
+
+    The gradients are extended to (2H, 2W) as the derivatives of the phase mirrored along x and y
+    (sign flipped where the mirroring reverses the derivative's direction). The extended field is an
+    exact periodic gradient field, so there are no boundary artefacts and tilts are kept.
+    Gradients are taken as point samples (unlike the Poisson solvers, which assume forward differences).
+    """
+    return _run_solver(fourier_asdi_solve, grad_y, grad_x, device)
+
+
+DEFAULT_INTEGRATOR = "poisson_neumann"
+
+INTEGRATORS = {
+    "poisson_neumann": (integrate_poisson_neumann,
+                        "least-squares Poisson solve, Neumann boundaries (DCT): exact and fast (default)"),
+    "poisson_zero_boundary": (integrate_poisson_zero_boundary,
+                              "Poisson solve with OPD = 0 on the border (conjugate gradients): original Deep CWFS solver"),
+    "fourier_mirror": (integrate_fourier_mirror,
+                       "Fourier integration, gradients mirror-padded by N/2 (signs kept): loses tilts"),
+    "fourier_asdi": (integrate_fourier_asdi,
+                     "Fourier integration, anti-symmetric derivative extension (ASDI): no boundary artefacts"),
+}
+
+
+def available_integrators():
+    """``{name: description}`` of the integrators accepted as ``integrator=`` / ``method=``."""
+    return {name: description for name, (_, description) in INTEGRATORS.items()}
+
+
+def integrate(displacement, method: str = DEFAULT_INTEGRATOR, device: DeviceLike = None, **kwargs):
+    """Integrate a (2, H, W) displacement field ordered (y, x) with the integrator named ``method``."""
     if method not in INTEGRATORS:
-        raise ValueError(f"integrator must be one of {sorted(INTEGRATORS)}")
-    return INTEGRATORS[method](displacement[0], displacement[1], device=device, **kwargs)
+        raise ValueError(f"unknown integrator '{method}'; available: {sorted(INTEGRATORS)}")
+    function = INTEGRATORS[method][0]
+    return function(displacement[0], displacement[1], device=device, **kwargs)

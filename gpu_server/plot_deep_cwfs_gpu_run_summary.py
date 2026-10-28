@@ -67,7 +67,8 @@ def gt_label_opd(data: str, idx: str):
     dist = {r["img_id"]: float(r["dist_pm_im"]) * 1e-6 for r in csv.DictReader(open(os.path.join(folder, "dataset_details.csv")))}
     s, b = cfg["data_saving_params"]["GRAD_DATA_SCALE"], cfg["data_saving_params"]["GRAD_DATA_BIAS"]
     gt = np.stack([load_image(os.path.join(folder, "gt_gradients", f"{idx}_{c}.tiff")) / s - b for c in (0, 1)])
-    opd = -Setup(cfg["system_params"]["DIGITAL_PX_SIZE"], dist[idx]).opd_scale * integrate(gt, "cg")
+    # default integrator, as the run (runs before the default changed used "poisson_zero_boundary")
+    opd = -Setup(cfg["system_params"]["DIGITAL_PX_SIZE"], dist[idx]).opd_scale * integrate(gt)
     return opd - opd.mean()
 
 

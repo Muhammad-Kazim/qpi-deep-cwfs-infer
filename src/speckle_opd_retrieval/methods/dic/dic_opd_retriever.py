@@ -44,7 +44,8 @@ class DIC(OPDRetriever):
         sigma: Gaussian σ [px] of the local intensity normalisation (default 6; > speckle grain).
         saturation: pixel value treated as saturated and excluded (e.g. 65520 for a 12-bit
             camera stored as 16-bit); None disables the mask.
-        integrator: "dct" (default) or "cg".
+        integrator: ``"poisson_neumann"`` (default), ``"poisson_zero_boundary"``, ``"fourier_mirror"`` or
+            ``"fourier_asdi"`` (see ``available_integrators()``).
         device: ``None`` (CUDA if available, else CPU), ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``.
 
     ``result.info`` holds the grid results: ``grid_rows``, ``grid_cols``, ``grid_displacement``
@@ -52,7 +53,6 @@ class DIC(OPDRetriever):
     """
 
     name = "dic"
-    default_integrator = "dct"
 
     def __init__(self, setup: Setup, window: int = 32, step: int = 8, search: int = 7,
                  sigma: float = 6.0, saturation: Optional[float] = None, integrator: Optional[str] = None,

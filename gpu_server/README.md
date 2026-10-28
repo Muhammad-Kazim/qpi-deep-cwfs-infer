@@ -33,6 +33,14 @@ If the conda torch needs a newer driver than the server has, pin the CUDA versio
 # 4. run (one call: default checkpoint on both test sets)
 python gpu_server/run_deep_cwfs_gpu_tests_and_inference.py --data /path/to/data --device cuda
 ```
+```bash
+# 5. example notebook (Deep CWFS stitching + the four integrators), executed on the GPU
+SPECKLE_OPD_DATA=/path/to/data jupyter nbconvert --to notebook --execute \
+  examples/example_deep_cwfs_stitching_and_integrators.ipynb --output-dir results/examples_executed_on_gpu
+```
+Copy `results/examples_executed_on_gpu/` back with rsync like the run folder (below); the executed notebook replaces
+`examples/example_deep_cwfs_stitching_and_integrators.ipynb` on the laptop so it is saved with its outputs.
+
 Options: `--no-maps` (skip the OPD maps), `--checkpoint-glob '*.pth'` (all checkpoints instead of the default), `--limit N`
 (first N pairs per set), `--skip-pytest`. The original code is extracted from `origin/main` into `.cache/` (git-ignored).
 
@@ -43,6 +51,7 @@ cd ../data && rsync -av deep_cwfs_model_checkpoints 2026-04-13_cwfs_speckle_pair
   2025-12-03_synthellips_v0_synthetic_cwfs_pairs_with_ground_truth <server>:/path/to/data/ && cd -
 # results back
 rsync -av <server>:<path>/speckle_opd_retrieval/results/deep_cwfs_gpu_server/ results/deep_cwfs_gpu_server/
+rsync -av <server>:<path>/speckle_opd_retrieval/results/examples_executed_on_gpu/ results/examples_executed_on_gpu/
 ```
 
 ## Output (`results/deep_cwfs_gpu_server/<date>_<host>/`)
