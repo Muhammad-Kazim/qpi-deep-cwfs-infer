@@ -1,21 +1,16 @@
-"""Registry (lazy, torch-free listing) and the command line."""
+"""Registry (lazy) and the command line."""
 import json
-import sys
 
 import numpy as np
 import pytest
 
 from speckle_opd_retrieval import OPDRetriever, Setup, available_methods, get_method, register, retrieve
 from speckle_opd_retrieval.command_line_interface import main
-from conftest import bump, speckle, warp
+from conftest import DEVICE, bump, speckle, warp
 
 
-def test_listing_methods_does_not_import_torch():
-    had_torch = "torch" in sys.modules
-    names = available_methods()
-    assert {"dic", "deep_cwfs"} <= set(names)
-    if not had_torch:
-        assert "torch" not in sys.modules
+def test_listing_methods():
+    assert {"dic", "deep_cwfs"} <= set(available_methods())
 
 
 def test_get_method_and_one_call_retrieve():
@@ -40,13 +35,14 @@ def test_cli_run_dic_with_config_and_params(tmp_path, capsys):
     for i in range(2):
         tifffile.imwrite(tmp_path / f"spec_{i}.tiff", warp(I0, bump((160, 200), amp=10 * (i + 1))).astype(np.float32))
     (tmp_path / "cfg.json").write_text(json.dumps({"method": "dic", "reference": "ref.tiff", "specimen": "spec_*.tiff",
-                                                   "pixel_size": 3.45e-6, "distance": 2.48e-3, "out": "out",
+                                                   "pixel_size": 3.45e-6, "distance": 2.48e-3, "out": "out", "device": DEVICE,
                                                    "params": {"search": 4}}))
     assert main(["run", "-c", str(tmp_path / "cfg.json"), "--formats", "npy", "--param", "window=24"]) == 0
     for i in range(2):
         assert np.load(tmp_path / "out" / f"spec_{i}_dic_opd.npy").shape == (160, 200)
     meta = json.load(open(tmp_path / "out" / "spec_0_dic_meta.json"))
     assert meta["params"]["window"] == 24 and meta["params"]["search"] == 4
+    assert meta["params"]["device"].startswith(DEVICE.split(":")[0])
     assert main(["methods"]) == 0 and "deep_cwfs" in capsys.readouterr().out
 
 

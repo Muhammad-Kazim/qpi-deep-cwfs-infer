@@ -4,11 +4,15 @@ Retrieve the **optical path difference (OPD)**, its gradient and the speckle dis
 reference / specimen speckle image pair (coded wavefront sensing), with interchangeable methods
 behind **one interface**.
 
-| Method | Name | Status | Needs |
-|---|---|---|---|
-| Digital image correlation (amplitude-robust ZNCC) | `dic` | ✅ tested on synthetic data | numpy, scipy |
-| Deep CWFS (CWFS-trained SEA-RAFT; default checkpoint `ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth`, RAFT on request) | `deep_cwfs` | ✅ ported; reproduces the original script on GPU; sign agrees with DIC | `[deep]` = torch, torchvision |
-| Classical CWFS (ADMM) | — | ⏳ to port from `archive/` | torch |
+| Method | Name | Status |
+|---|---|---|
+| Digital image correlation (amplitude-robust ZNCC) | `dic` | ✅ tested on synthetic data; torch port identical to the validated NumPy version (≤1e-10) |
+| Deep CWFS (CWFS-trained SEA-RAFT; default checkpoint `ellipsoids_sea_raft_medium_20260219_082610_9_5027.pth`, RAFT on request) | `deep_cwfs` | ✅ ported; reproduces the original script on GPU; sign agrees with DIC |
+| Classical CWFS (ADMM) | — | ⏳ to port from `archive/` |
+
+Everything (methods, Poisson integration, tiling) runs in **PyTorch, on the CPU or a GPU**: every method takes
+`device=` (`None` = CUDA if available, else CPU; or `"cpu"`, `"cuda"`, `"cuda:1"`, `"mps"`). Computation is float64
+(float32 on MPS); inputs may be NumPy arrays or tensors, results are NumPy arrays on the CPU.
 
 ## Install
 `pip install -e` installs into the *active* environment and does not create one, so create and activate
@@ -21,23 +25,21 @@ conda create -n speckle_qpi python=3.10 -y && conda activate speckle_qpi
 
 ### Using the methods (no development tools needed)
 ```bash
-pip install -e .                                          # DIC only (numpy, scipy, tifffile, matplotlib, pillow)
-
-# Deep CWFS in addition: torch first (CPU build shown; for a GPU use .../whl/cu121 matching nvidia-smi)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[deep]"                                  # or: pip install -r requirements.txt
+# torch first, the build for your hardware: GPU .../whl/cu121 (cuXXX matching nvidia-smi), or CPU .../whl/cpu
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -e .                                          # or: pip install -r requirements.txt
 ```
 
 ### Development (tests, reproduction check, notebooks)
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[deep,dev]"                              # or: pip install -r requirements-dev.txt
-pytest -v
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu   # or a cuXXX build
+pip install -e ".[dev]"                                   # or: pip install -r requirements-dev.txt
+pytest -v                                                 # SPECKLE_OPD_DEVICE=cuda pytest -v: tests on the GPU
 ```
 `dev` adds pytest, huggingface_hub (imported by the original qpi-deep-cwfs-infer code in the reproduction test),
 jupyterlab, ipykernel, nbformat and nbclient.
 
-### GPU server (development env, Deep CWFS on CUDA)
+### GPU server (development env, all methods on CUDA)
 ```bash
 conda env create -f environment_gpu_server.yml        # CUDA torch from conda-forge + this package + dev tools
 conda activate speckle_qpi
@@ -54,9 +56,9 @@ from speckle_opd_retrieval import Setup, get_method, available_methods, load_ima
 setup = Setup(pixel_size=3.45e-6, distance=2.48e-3)           # metres
 ref, spec = load_image("ref.tiff"), load_image("specimen.tiff")
 
-available_methods()        # {'dic': '…', 'deep_cwfs': '…'}  (does not import torch)
+available_methods()        # {'dic': '…', 'deep_cwfs': '…'}
 
-dic  = get_method("dic", setup, window=32, step=8, search=7, saturation=65520)
+dic  = get_method("dic", setup, window=32, step=8, search=7, saturation=65520)   # device=None: CUDA if available
 deep = get_method("deep_cwfs", setup, device="cuda")   # default: longer-trained SEA-RAFT medium
 # other model: get_method("deep_cwfs", setup, model="raft_large")  or  checkpoint="path/to/file.pth"
 
@@ -114,9 +116,9 @@ Accuracy on synthetic speckle: 0.03–0.04 px RMS. With amplitude change only, t
 ## Folder guide
 | Folder / file | Contents |
 |---|---|
-| `pyproject.toml` | package metadata and dependencies (extras: `deep` for Deep CWFS, `dev` for development) |
+| `pyproject.toml` | package metadata and dependencies (torch, torchvision, …; extra `dev` for development) |
 | `environment_gpu_server.yml` | development conda env for the GPU server (CUDA torch from conda-forge + this package + dev tools) |
-| `requirements.txt` | runtime only (use DIC + Deep CWFS): torch, torchvision, this package with `[deep]` |
+| `requirements.txt` | runtime only (use the methods): torch, torchvision, this package |
 | `requirements-dev.txt` | development: runtime + `[dev]` (pytest, huggingface_hub, jupyterlab, ipykernel, nbformat, nbclient) |
 | `src/speckle_opd_retrieval/` | the package; `core/` shared code, `methods/<name>/` one folder per method |
 | `tests/` | automated tests (`pytest -v`) |

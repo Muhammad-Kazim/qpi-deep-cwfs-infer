@@ -1,4 +1,4 @@
-"""Deep CWFS checks on the GPU server; writes a results folder that is copied back with rsync (not git).
+"""GPU checks on the server (whole test suite on CUDA, Deep CWFS + DIC inference); writes a results folder that is copied back with rsync (not git).
 
 Run from the project root of a clone of this repository (branch ``speckle-opd-retrieval``):
 
@@ -6,11 +6,11 @@ Run from the project root of a clone of this repository (branch ``speckle-opd-re
 
 Steps
 -----
-1. ``pytest tests/test_deep_cwfs_opd_retriever.py`` on the GPU, including
+1. ``pytest tests/`` on the GPU (every method runs in torch), including the torch-vs-NumPy DIC equivalence,
    ``test_reproduces_original_inference`` (against the original code, extracted from
    ``origin/main``) and ``test_sign_agrees_with_dic`` (prints ``corr(deep, dic)``).
 2. Inference with the default checkpoint (longer-trained SEA-RAFT medium; ``--checkpoint-glob '*.pth'``
-   for all checkpoints) on every pair of the two test sets:
+   for all checkpoints) and DIC, both on the GPU and timed, on every pair of the two test sets:
    - corr(deep OPD, DIC OPD) for each pair (should be > 0);
    - SynthEllips only: correlation of the Deep CWFS displacement channels (y, x) with the
      ground-truth gradient channels (``N_0``, ``N_1``), which checks sign and channel order
@@ -45,6 +45,7 @@ CROP = (slice(40, -40), slice(40, -40))      # border excluded from correlations
 
 
 def git(*args) -> str:
+    """Output of a git command run in the project folder."""
     return subprocess.run(["git", *args], cwd=PROJECT, capture_output=True, text=True, check=True).stdout.strip()
 
 
@@ -58,23 +59,26 @@ def extract_original_repo(dest: str, ref: str = "origin/main") -> str:
 
 
 def run_pytest(out_dir: str, env: dict) -> int:
-    cmd = [sys.executable, "-m", "pytest", "tests/test_deep_cwfs_opd_retriever.py", "-v", "-rs", "-s",
-           "-p", "no:cacheprovider", f"--junitxml={os.path.join(out_dir, 'pytest_deep_cwfs_junit.xml')}"]
+    """Run the whole test suite with ``env`` (device, data paths), save the log, return the exit code."""
+    cmd = [sys.executable, "-m", "pytest", "tests", "-v", "-rs", "-s",
+           "-p", "no:cacheprovider", f"--junitxml={os.path.join(out_dir, 'pytest_gpu_junit.xml')}"]
     t0 = time.perf_counter()
     p = subprocess.run(cmd, cwd=PROJECT, env=env, capture_output=True, text=True)
     log = p.stdout + p.stderr + f"\n[exit code {p.returncode}, {time.perf_counter() - t0:.0f} s]\n"
-    with open(os.path.join(out_dir, "pytest_deep_cwfs_gpu.log"), "w") as f:
+    with open(os.path.join(out_dir, "pytest_gpu.log"), "w") as f:
         f.write(log)
     print(log)
     return p.returncode
 
 
 def pairs(folder: str):
+    """Yield ``(index, reference path, specimen path)`` for each pair in a test-set folder."""
     for ref in sorted(glob.glob(os.path.join(folder, "reference", "*.tiff")), key=lambda p: int(os.path.basename(p)[:-5])):
         yield os.path.basename(ref)[:-5], ref, os.path.join(folder, "specimen", os.path.basename(ref))
 
 
 def corr(a, b) -> float:
+    """Pearson correlation of two maps without a 40 px border."""
     return float(np.corrcoef(a[CROP].ravel(), b[CROP].ravel())[0, 1])
 
 
@@ -84,6 +88,7 @@ def channel_corr(disp, gt) -> list:
 
 
 def main():
+    """Run the tests, the inference on both test sets, and write the results folder."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=os.environ.get("SPECKLE_OPD_DATA", os.path.join(PROJECT, "..", "data")),
                     help="folder holding deep_cwfs_model_checkpoints/ and the two test sets")
@@ -133,12 +138,13 @@ def main():
     synth_dist = {r["img_id"]: float(r["dist_pm_im"]) * 1e-6 for r in csv.DictReader(open(os.path.join(sets["synthellips"], "dataset_details.csv")))}
 
     def setup_for(set_name, idx):
+        """Optical setup of one pair (SynthEllips: per-image distance from the dataset table)."""
         if set_name == "synthellips":
             return Setup(synth_cfg["system_params"]["DIGITAL_PX_SIZE"], synth_dist[idx])
         return Setup(3.45e-6, 2.48e-3)
 
-    # DIC reference (CPU), once per pair
-    loaded, dic = {}, {}
+    # DIC reference (same device), once per pair
+    loaded, dic, dic_seconds = {}, {}, {}
     for set_name, folder in sets.items():
         for idx, rp, sp in list(pairs(folder))[:args.limit]:
             I0, I1 = load_image(rp), load_image(sp)
@@ -146,8 +152,10 @@ def main():
             if set_name == "synthellips":
                 gt = np.stack([load_image(os.path.join(folder, "gt_gradients", f"{idx}_{c}.tiff")) / gscale - gbias for c in (0, 1)])
             loaded[set_name, idx] = (I0, I1, gt)
-            dic[set_name, idx] = get_method("dic", setup_for(set_name, idx), saturation=float(I0.max())).retrieve(I0, I1)
-            print(f"dic {set_name}/{idx} done")
+            dic[set_name, idx] = get_method("dic", setup_for(set_name, idx), saturation=float(I0.max()),
+                                            device=args.device).retrieve(I0, I1)
+            dic_seconds[set_name, idx] = dic[set_name, idx].info["runtime_s"]       # synchronised in retrieve()
+            print(f"dic {set_name}/{idx} done ({dic_seconds[set_name, idx]:.2f} s)")
 
     rows, maps = [], {}
     for ck in ckpts:
@@ -161,7 +169,8 @@ def main():
             dt = time.perf_counter() - t0
             d = dic[set_name, idx]
             row = {"checkpoint": ck_name, "set": set_name, "pair": idx, "shape": "x".join(map(str, I0.shape)),
-                   "seconds": round(dt, 2), "corr_deep_dic_opd": round(corr(r.opd, d.opd), 4)}
+                   "seconds": round(dt, 2), "dic_seconds": round(dic_seconds[set_name, idx], 2),
+                   "corr_deep_dic_opd": round(corr(r.opd, d.opd), 4)}
             if gt is not None:
                 cd, cg = channel_corr(r.displacement, gt), channel_corr(d.displacement, gt)
                 row.update({f"deep_disp{i}_gt{j}": round(cd[i][j], 4) for i in range(2) for j in range(2)})
@@ -173,7 +182,8 @@ def main():
     fields = list(dict.fromkeys(k for r in rows for k in r))
     with open(os.path.join(out, "metrics.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
-        w.writeheader(); w.writerows(rows)
+        w.writeheader()
+        w.writerows(rows)
 
     if not args.no_maps:
         os.makedirs(os.path.join(out, "opd_maps"), exist_ok=True)
@@ -183,12 +193,12 @@ def main():
             np.savez_compressed(os.path.join(out, "opd_maps", f"dic_{set_name}_opd_m.npz"),
                                 **{i: dic[s, i].opd.astype(np.float32) for (s, i) in dic if s == set_name})
 
-    lines = [f"# Deep CWFS GPU run {run}", "",
+    lines = [f"# GPU run {run} (Deep CWFS + DIC)", "",
              f"commit `{env_info['git_commit'][:10]}`{' (dirty)' if env_info['git_dirty'] else ''}, torch {env_info['torch']}, "
              f"CUDA {env_info['cuda']}, {env_info['gpu']}", "",
-             f"pytest exit code: {pytest_code}" + ("" if pytest_code is None else "  (see `pytest_deep_cwfs_gpu.log`)"), "",
-             "| checkpoint | set | mean corr(deep, DIC) OPD | min | mean corr(deep y, gt N_0) | mean corr(deep x, gt N_1) | mean s/pair |",
-             "|---|---|---|---|---|---|---|"]
+             f"pytest exit code: {pytest_code}" + ("" if pytest_code is None else "  (see `pytest_gpu.log`)"), "",
+             "| checkpoint | set | mean corr(deep, DIC) OPD | min | mean corr(deep y, gt N_0) | mean corr(deep x, gt N_1) | mean s/pair deep | mean s/pair DIC |",
+             "|---|---|---|---|---|---|---|---|"]
     for ck in ckpts:
         for set_name in sets:
             sel = [r for r in rows if r["checkpoint"] == os.path.basename(ck)[:-4] and r["set"] == set_name]
@@ -196,7 +206,7 @@ def main():
             gy = f"{np.mean([r['deep_disp0_gt0'] for r in sel]):.3f}" if set_name == "synthellips" else "–"
             gx = f"{np.mean([r['deep_disp1_gt1'] for r in sel]):.3f}" if set_name == "synthellips" else "–"
             lines.append(f"| {os.path.basename(ck)[:-4]} | {set_name} | {np.mean(c):.3f} | {np.min(c):.3f} | {gy} | {gx} | "
-                         f"{np.mean([r['seconds'] for r in sel]):.2f} |")
+                         f"{np.mean([r['seconds'] for r in sel]):.2f} | {np.mean([r['dic_seconds'] for r in sel]):.2f} |")
     synth = [r for r in rows if r["set"] == "synthellips"]
     if synth:
         lines += ["", f"DIC vs gt (synthellips): mean corr(y, N_0) = {np.mean([r['dic_disp0_gt0'] for r in synth]):.3f}, "

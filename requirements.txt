@@ -1,8 +1,7 @@
-# Runtime packages for USING the methods (DIC + Deep CWFS); no test or notebook tools.
+# Runtime packages for USING the methods (DIC, Deep CWFS; all run in PyTorch on CPU or GPU); no test or notebook tools.
 # Inside an activated env (Python >= 3.9), from the project root:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121   # first; cuXXX to match nvidia-smi (or /cpu)
 #   pip install -r requirements.txt
-# DIC only needs neither torch line: pip install -e .
 torch>=1.13
 torchvision>=0.14
--e .[deep]
+-e .

@@ -9,11 +9,12 @@ description = "OPD retrieval from speckle / coded wavefront sensing image pairs 
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Syed Muhammad Kazim" }]
-dependencies = ["numpy>=1.22", "scipy>=1.8", "tifffile>=2022.5", "matplotlib>=3.5", "pillow>=9"]
+# every method runs in PyTorch (CPU or GPU); install the torch build for your hardware first (README)
+dependencies = ["torch>=1.13", "torchvision>=0.14", "numpy>=1.22", "scipy>=1.8", "tifffile>=2022.5",
+                "matplotlib>=3.5", "pillow>=9"]
 
 [project.optional-dependencies]
-# users: no extra (DIC) or `deep` (Deep CWFS). Developers: `dev` (tests, original-script check, notebooks).
-deep = ["torch>=1.13", "torchvision>=0.14"]
+# users: no extra. Developers: `dev` (tests, original-script check, notebooks).
 dev = ["pytest>=7", "huggingface_hub", "jupyterlab", "ipykernel", "nbformat", "nbclient"]
 
 [project.scripts]

@@ -10,7 +10,7 @@ DATA = os.environ.get("SPECKLE_OPD_DATA", os.path.join(PROJECT, "..", "data"))
 ARCHIVE = os.path.join(PROJECT, "archive")
 # original qpi-deep-cwfs-infer checkout (on a server: a copy of the `main` branch, see gpu_server/)
 ORIGINAL_REPO = os.environ.get("SPECKLE_OPD_ORIGINAL_REPO", os.path.join(ARCHIVE, "original_qpi_deep_cwfs_infer_repo"))
-DEVICE = os.environ.get("SPECKLE_OPD_DEVICE", "cpu")   # Deep CWFS tests: "cuda" on the GPU server
+DEVICE = os.environ.get("SPECKLE_OPD_DEVICE", "cpu")   # device for the tests ("cuda" on the GPU server)
 CKPTS = os.path.join(DATA, "deep_cwfs_model_checkpoints")
 SAMPLES = os.path.join(DATA, "2026-04-13_cwfs_speckle_pairs_10_samples")
 

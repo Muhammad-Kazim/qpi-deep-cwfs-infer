@@ -34,6 +34,7 @@ def short(ck: str) -> str:
 
 
 def heatmap(ax, fig, values, rows, cols, title, cbar_label):
+    """Annotated heat map of ``values`` (rows × cols) with a colour bar."""
     im = ax.imshow(values, cmap=CMAP, vmin=-1, vmax=1, aspect="auto")
     ax.set_xticks(range(len(cols)), cols, fontsize=8)
     ax.set_yticks(range(len(rows)), rows, fontsize=8)
@@ -47,11 +48,13 @@ def heatmap(ax, fig, values, rows, cols, title, cbar_label):
 
 
 def opd_panel(ax, fig, opd, title):
+    """One OPD map [µm] with a symmetric diverging colour scale and a colour bar."""
     um = opd * 1e6
     v = np.percentile(np.abs(um), 99.5) or 1.0
     im = ax.imshow(um, cmap=CMAP, vmin=-v, vmax=v)
     ax.set_title(title, fontsize=9)
-    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_yticks([])
     fig.colorbar(im, ax=ax, label="OPD [µm]", fraction=0.046, pad=0.02)
 
 
@@ -69,6 +72,7 @@ def gt_label_opd(data: str, idx: str):
 
 
 def plot_run(run_dir: str, data: str | None = None, real_pair: str = "0", synth_pair: str = "0") -> str:
+    """Write ``summary.png`` for a GPU run folder and return its path."""
     rows = list(csv.DictReader(open(os.path.join(run_dir, "metrics.csv"))))
     env = json.load(open(os.path.join(run_dir, "environment.json")))
     ckpts = list(dict.fromkeys(r["checkpoint"] for r in rows))
@@ -95,7 +99,8 @@ def plot_run(run_dir: str, data: str | None = None, real_pair: str = "0", synth_
     top, bottom = fig.subfigures(2, 1, height_ratios=[7, 11]) if have_maps else (fig, None)
     gs = top.add_gridspec(2, 1)
 
-    log = open(os.path.join(run_dir, "pytest_deep_cwfs_gpu.log")).read() if os.path.exists(os.path.join(run_dir, "pytest_deep_cwfs_gpu.log")) else ""
+    logs = [os.path.join(run_dir, f) for f in ("pytest_gpu.log", "pytest_deep_cwfs_gpu.log")]   # new / older runs
+    log = next((open(f).read() for f in logs if os.path.exists(f)), "")
     tally = re.findall(r"=+ (.*?) in [\d.]+s", log)
     corr_test = re.search(r"corr\(deep, dic\) = (-?[\d.]+)", log)
     fig.suptitle(f"Deep CWFS GPU run {env['run']}  ·  {env.get('gpu')}  ·  commit {env['git_commit'][:7]}\n"
@@ -135,6 +140,7 @@ def plot_run(run_dir: str, data: str | None = None, real_pair: str = "0", synth_
 
 
 def main():
+    """Command line: plot an existing run folder."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
     ap.add_argument("--data", default=os.environ.get("SPECKLE_OPD_DATA", os.path.join(PROJECT, "..", "data")))

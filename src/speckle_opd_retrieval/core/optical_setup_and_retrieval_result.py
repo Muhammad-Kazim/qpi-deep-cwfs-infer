@@ -21,6 +21,7 @@ class Setup:
     distance: float
 
     def __post_init__(self):
+        """Reject non-positive values."""
         if self.pixel_size <= 0 or self.distance <= 0:
             raise ValueError("pixel_size and distance must be positive (metres)")
 

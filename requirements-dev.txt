@@ -4,4 +4,4 @@
 #   pip install -r requirements-dev.txt
 torch>=1.13
 torchvision>=0.14
--e .[deep,dev]
+-e .[dev]

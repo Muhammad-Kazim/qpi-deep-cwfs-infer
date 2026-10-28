@@ -1,6 +1,7 @@
-"""Tiling used by Deep CWFS (numpy only)."""
+"""Tiling used by Deep CWFS (torch tensors)."""
 import numpy as np
 import pytest
+import torch
 
 from speckle_opd_retrieval.methods.deep_cwfs.patch_tiling_and_stitching import pad_to, stitch, tile_grid, tile_starts
 
@@ -13,11 +14,11 @@ def test_tiles_cover_axis(n, patch, overlap):
 
 @pytest.mark.parametrize("mode", ["mean", "feather"])
 def test_stitch_reconstructs(mode, rng):
-    img = rng.standard_normal((2, 640, 1100)); P, ov = 256, 64
+    img = torch.tensor(rng.standard_normal((2, 640, 1100))); P, ov = 256, 64
     c = tile_grid((640, 1100), P, ov)
-    np.testing.assert_allclose(stitch([img[:, r:r + P, q:q + P] for r, q in c], c, (640, 1100), ov, mode), img, atol=1e-12)
+    torch.testing.assert_close(stitch([img[:, r:r + P, q:q + P] for r, q in c], c, (640, 1100), ov, mode), img, atol=1e-12, rtol=0)
 
 
 def test_pad_larger_than_image():
-    a = np.arange(200 * 200, dtype=float).reshape(200, 200)
+    a = torch.arange(200 * 200, dtype=torch.float64).reshape(200, 200)
     assert pad_to(a, 500, 500).shape == (500, 500)

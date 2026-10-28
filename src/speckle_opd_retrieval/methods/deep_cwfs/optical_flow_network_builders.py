@@ -81,6 +81,7 @@ def guess_model_name(checkpoint: str) -> str:
 
 
 def _load_state_dict(checkpoint: str, device) -> dict:
+    """Read the network weights from a ``.pth`` file (a plain state dict or ``{"model": ...}``)."""
     try:
         weights = torch.load(checkpoint, map_location=device, weights_only=True)
     except Exception:  # older checkpoints may pickle extra objects
@@ -102,6 +103,8 @@ def _to_network_input(ref: torch.Tensor, spec: torch.Tensor, size: Tuple[int, in
 
 @dataclass
 class FlowModel:
+    """A loaded optical-flow network with its input size and forward call; call it with two tile batches."""
+
     name: str
     network: torch.nn.Module
     input_size: Tuple[int, int]
@@ -111,17 +114,18 @@ class FlowModel:
     @torch.no_grad()
     def __call__(self, ref: torch.Tensor, spec: torch.Tensor) -> torch.Tensor:
         """``ref``, ``spec``: ``(B, H, W)`` float tensors, normalised by the
-        reference maximum. Returns flow ``(B, 2, H, W)`` on the CPU, resized back
+        reference maximum. Returns flow ``(B, 2, H, W)`` on the model's device, resized back
         to the patch size. As in the original pipeline the flow *values* are
         not rescaled: the networks were trained to output displacement in
         patch pixels on the resized grid."""
         h, w = ref.shape[-2:]
-        a, b = _to_network_input(ref, spec, self.input_size)
-        flow = self.forward(a.to(self.device), b.to(self.device)).detach().cpu()
+        a, b = _to_network_input(ref.to(self.device), spec.to(self.device), self.input_size)
+        flow = self.forward(a, b).detach()
         return TF.resize(flow, size=[h, w], antialias=True)
 
 
 def _build_raft(name: str, checkpoint: Optional[str], device, iters: Optional[int]) -> FlowModel:
+    """torchvision RAFT (large / small) with a 1-channel input, loaded from ``checkpoint``."""
     from torchvision.models.optical_flow import raft_large, raft_small
 
     net = raft_large(progress=False) if name == "raft_large" else raft_small(progress=False)
@@ -143,12 +147,14 @@ def _build_raft(name: str, checkpoint: Optional[str], device, iters: Optional[in
     n_iter = 12 if iters is None else int(iters)
 
     def forward(a, b):
+        """Final flow estimate of RAFT."""
         return net(a, b, num_flow_updates=n_iter)[-1]
 
     return FlowModel(name, net, INPUT_SIZE["raft"], forward, torch.device(device))
 
 
 def _sea_raft_args(name: str) -> argparse.Namespace:
+    """Architecture settings of a SEA-RAFT variant (as in the original code)."""
     if name not in ("sea_raft_medium", "sea_raft_small"):
         raise ValueError(f"SEA-RAFT variant '{name}' not available")
     # Same settings as the original utils.get_model_and_transforms; medium
@@ -179,6 +185,7 @@ def _sea_raft_args(name: str) -> argparse.Namespace:
 
 
 def _build_sea_raft(name: str, checkpoint: Optional[str], device, iters: Optional[int]) -> FlowModel:
+    """Vendored SEA-RAFT (medium / small) with 1-channel input, loaded from ``checkpoint``."""
     from .sea_raft import RAFT as SeaRAFT
 
     if checkpoint is None:
@@ -195,6 +202,7 @@ def _build_sea_raft(name: str, checkpoint: Optional[str], device, iters: Optiona
     n_iter = args.iters if iters is None else int(iters)
 
     def forward(a, b):
+        """Final flow estimate of SEA-RAFT."""
         return net(a, b, iters=n_iter, test_mode=True)["final"]
 
     return FlowModel(name, net, INPUT_SIZE["sea_raft"], forward, torch.device(device))

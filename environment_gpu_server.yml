@@ -1,4 +1,4 @@
-# DEVELOPMENT conda env for the GPU server (Deep CWFS on CUDA + tests and notebook tools). From the project root:
+# DEVELOPMENT conda env for the GPU server (all methods on CUDA + tests and notebook tools). From the project root:
 #   conda env create -f environment_gpu_server.yml && conda activate speckle_qpi
 # conda-forge's pytorch-gpu picks a CUDA build that matches the server's driver.
 name: speckle_qpi

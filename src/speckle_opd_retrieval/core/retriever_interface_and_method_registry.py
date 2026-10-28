@@ -15,10 +15,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import numpy as np
+import torch
 
 from .optical_setup_and_retrieval_result import RetrievalResult, Setup
 from .poisson_integration_gradient_to_opd import integrate
+from .torch_device_and_tensor_helpers import as_tensor, resolve_device, to_numpy, working_dtype
 
 # OPD sign (textbook): OPD = ∫(n - n_medium) dz, positive for an object of higher RI (phase lag,
 # converging field). Speckles move toward a converging region, i.e. along +∇OPD, so with
@@ -28,7 +29,7 @@ from .poisson_integration_gradient_to_opd import integrate
 
 @dataclass
 class MethodOutput:
-    """What a method's ``_estimate`` returns to the base class.
+    """What a method's ``_estimate`` returns to the base class (tensors on the method's device).
 
     displacement: (2, H, W) in px, convention specimen(x + d) = reference(x), order (y, x).
     phi: optional (H, W) integrated displacement [px²]; if given, the base class uses it
@@ -37,9 +38,9 @@ class MethodOutput:
     info: method-specific extras.
     """
 
-    displacement: np.ndarray
-    phi: Optional[np.ndarray] = None
-    amplitude: Optional[np.ndarray] = None
+    displacement: torch.Tensor
+    phi: Optional[torch.Tensor] = None
+    amplitude: Optional[torch.Tensor] = None
     info: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -47,49 +48,70 @@ class OPDRetriever:
     """Base class: ``retrieve(reference, specimen) -> RetrievalResult``.
 
     Subclasses set ``name`` and ``default_integrator`` and implement ``_estimate``.
-    Constructor keyword arguments are stored in ``self.params`` (provenance) and
-    ``integrator`` ("dct" or "cg") chooses the Poisson solver.
+    Constructor keyword arguments are stored in ``self.params`` (provenance),
+    ``integrator`` ("dct" or "cg") chooses the Poisson solver and ``device`` where everything
+    runs (``None``: CUDA if available, else CPU). ``_estimate`` receives the images as tensors on
+    ``self.device`` in ``self.dtype`` (float64; float32 on MPS); the result is NumPy on the CPU.
     """
 
     name: str = ""
     default_integrator: str = "dct"
 
-    def __init__(self, setup: Setup, integrator: Optional[str] = None, **params):
+    def __init__(self, setup: Setup, integrator: Optional[str] = None, device: Optional[str] = None, **params):
+        """Store the setup, integrator, device and method parameters (``params``, kept for provenance)."""
         if not isinstance(setup, Setup):
             raise TypeError("setup must be a speckle_opd_retrieval.Setup")
         self.setup = setup
         self.integrator = integrator or self.default_integrator
-        self.params = dict(params, integrator=self.integrator)
+        self.device = resolve_device(device)
+        self.dtype = working_dtype(self.device)
+        self.params = dict(params, integrator=self.integrator, device=str(self.device))
 
     # -- to implement -------------------------------------------------------------
-    def _estimate(self, reference: np.ndarray, specimen: np.ndarray) -> MethodOutput:  # pragma: no cover
+    def _estimate(self, reference: torch.Tensor, specimen: torch.Tensor) -> MethodOutput:  # pragma: no cover
+        """Method-specific part: two (H, W) tensors on ``self.device`` -> :class:`MethodOutput`."""
         raise NotImplementedError
 
     # -- common behaviour ---------------------------------------------------------
-    @staticmethod
-    def _as_pair(reference, specimen) -> Tuple[np.ndarray, np.ndarray]:
-        ref = np.asarray(reference, dtype=np.float64)
-        spec = np.asarray(specimen, dtype=np.float64)
+    def _as_pair(self, reference, specimen) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Check the two images (2-D, same shape, finite) and move them to ``self.device``."""
+        ref = as_tensor(reference, self.device, self.dtype)
+        spec = as_tensor(specimen, self.device, self.dtype)
         if ref.ndim != 2 or ref.shape != spec.shape:
-            raise ValueError(f"reference {ref.shape} and specimen {spec.shape} must be 2-D and equal in shape")
-        if not (np.isfinite(ref).all() and np.isfinite(spec).all()):
+            raise ValueError(f"reference {tuple(ref.shape)} and specimen {tuple(spec.shape)} must be 2-D and equal in shape")
+        if not bool(torch.isfinite(ref).all() & torch.isfinite(spec).all()):
             raise ValueError("images contain NaN or inf")
         return ref, spec
 
+    def _synchronize(self):
+        """Wait for queued GPU work, so that ``runtime_s`` measures the real computation time."""
+        if self.device.type == "cuda":
+            torch.cuda.synchronize(self.device)
+
     def retrieve(self, reference, specimen) -> RetrievalResult:
+        """``reference``, ``specimen``: 2-D NumPy arrays or tensors (any device; moved to ``self.device``)."""
         ref, spec = self._as_pair(reference, specimen)
+        self._synchronize()
         t0 = time.perf_counter()
-        out = self._estimate(ref, spec)
-        disp = np.asarray(out.displacement, dtype=np.float64)
-        if disp.shape != (2,) + ref.shape:
-            raise RuntimeError(f"{self.name}: displacement must have shape (2, H, W), got {disp.shape}")
-        phi = integrate(disp, self.integrator) if out.phi is None else np.asarray(out.phi, float) - np.mean(out.phi)
-        info = dict(out.info, runtime_s=time.perf_counter() - t0)
+        with torch.no_grad():
+            out = self._estimate(ref, spec)
+            disp = as_tensor(out.displacement, self.device, self.dtype)
+            if tuple(disp.shape) != (2,) + tuple(ref.shape):
+                raise RuntimeError(f"{self.name}: displacement must have shape (2, H, W), got {tuple(disp.shape)}")
+            if out.phi is None:
+                phi = integrate(disp, self.integrator)
+            else:
+                phi = as_tensor(out.phi, self.device, self.dtype)
+                phi = phi - phi.mean()
+        self._synchronize()
+        # everything returned to the user is NumPy on the CPU
+        info = {k: to_numpy(v) for k, v in out.info.items()}
+        info["runtime_s"] = time.perf_counter() - t0
         return RetrievalResult(
-            opd=self.setup.opd_scale * phi,
-            opd_gradient=self.setup.gradient_scale * disp,
-            displacement=disp,
-            amplitude=out.amplitude,
+            opd=self.setup.opd_scale * to_numpy(phi),
+            opd_gradient=self.setup.gradient_scale * to_numpy(disp),
+            displacement=to_numpy(disp),
+            amplitude=to_numpy(out.amplitude),
             method=self.name,
             params=dict(self.params),
             setup=self.setup,
@@ -103,18 +125,18 @@ class OPDRetriever:
     __call__ = retrieve
 
     def __repr__(self):
+        """``DIC(window=32, ..., device='cuda')``."""
         p = ", ".join(f"{k}={v!r}" for k, v in self.params.items())
         return f"{type(self).__name__}({p})"
 
 
 # -- registry ------------------------------------------------------------------------
-# name -> ("module:Class", one-line description). Modules are imported only when used,
-# so listing methods never imports torch.
+# name -> ("module:Class", one-line description). Modules are imported only when used.
 METHODS: Dict[str, Tuple[str, str]] = {
     "dic": ("speckle_opd_retrieval.methods.dic:DIC",
-            "Digital image correlation, robust to amplitude changes (numpy/scipy)"),
+            "Digital image correlation (ZNCC), robust to amplitude changes"),
     "deep_cwfs": ("speckle_opd_retrieval.methods.deep_cwfs:DeepCWFS",
-                  "Deep CWFS: CWFS-trained RAFT / SEA-RAFT optical-flow networks (needs torch)"),
+                  "Deep CWFS: CWFS-trained RAFT / SEA-RAFT optical-flow networks"),
 }
 
 
@@ -129,6 +151,7 @@ def available_methods() -> Dict[str, str]:
 
 
 def get_method_class(name: str):
+    """The retriever class registered under ``name`` (imports its module on first use)."""
     key = name.lower().replace("-", "_")
     if key not in METHODS:
         raise KeyError(f"unknown method '{name}'; available: {sorted(METHODS)}")

@@ -8,6 +8,7 @@ Examples::
     speckle-opd-retrieval run -m deep_cwfs -r ref.tiff -s spec.tiff --pixel-size 3.45e-6 --distance 2.48e-3
         # default checkpoint (longer-trained SEA-RAFT medium); --param model=raft_large or --param checkpoint=... for others
     speckle-opd-retrieval run -c config.json        # same keys as the flags; flags override the file
+    speckle-opd-retrieval run ... --device cpu      # default: CUDA if available, else CPU
 
 Method parameters are passed generically as ``--param name=value`` (repeatable); values are parsed
 as JSON where possible (numbers, true/false, null, lists), otherwise kept as strings. With several
@@ -29,6 +30,7 @@ from .core import Setup, available_methods, crop, get_method_class, load_image
 
 
 def _parse_param(s: str):
+    """``"name=value"`` -> ``(name, value)``; the value is parsed as JSON if possible, else kept as a string."""
     if "=" not in s:
         raise argparse.ArgumentTypeError(f"--param expects name=value, got '{s}'")
     k, v = s.split("=", 1)
@@ -39,6 +41,7 @@ def _parse_param(s: str):
 
 
 def _parser() -> argparse.ArgumentParser:
+    """Argument parser with the ``methods`` and ``run`` sub-commands."""
     p = argparse.ArgumentParser(prog="speckle-opd-retrieval", description="OPD retrieval from speckle (CWFS) image pairs.")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -54,6 +57,7 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument("--crop", type=int, nargs=4, metavar=("ROW0", "COL0", "ROW1", "COL1"), default=S)
     r.add_argument("--param", dest="params", action="append", type=_parse_param, default=S,
                    help="method parameter name=value (repeatable)")
+    r.add_argument("--device", default=S, help="cpu, cuda, cuda:1, mps (default: CUDA if available, else CPU)")
     r.add_argument("-o", "--out", default=S, help="output folder (default ./results)")
     r.add_argument("--unit", choices=["m", "mm", "um", "nm"], default=S, help="OPD unit in files (default um)")
     r.add_argument("--formats", nargs="+", choices=["tiff", "npy", "png"], default=S, help="default: tiff png")
@@ -63,8 +67,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _run(args) -> int:
+    """``run``: merge defaults, config file and flags, then retrieve and save OPD for every specimen and method."""
     cfg = {"method": ["dic"], "out": "results", "unit": "um", "formats": ["tiff", "png"], "save_gradient": False,
-           "crop": None, "params": {}}
+           "crop": None, "params": {}, "device": None}
     if args.config:
         with open(args.config) as fh:
             file_cfg = json.load(fh)
@@ -96,8 +101,11 @@ def _run(args) -> int:
     unknown = set(cfg["params"]) - set().union(*accepted.values())
     if unknown:
         raise SystemExit(f"parameter(s) {sorted(unknown)} not accepted by {cfg['method']}")
+    params = dict(cfg["params"])
+    if cfg["device"]:
+        params["device"] = cfg["device"]
     for mname, cls in classes.items():
-        method = cls(setup, **{k: v for k, v in cfg["params"].items() if k in accepted[mname]})
+        method = cls(setup, **{k: v for k, v in params.items() if k in accepted[mname]})
         for path in specimens:
             res = method.retrieve(ref, crop(load_image(path), cfg["crop"]))
             stem = os.path.splitext(os.path.basename(path))[0]
@@ -108,6 +116,7 @@ def _run(args) -> int:
 
 
 def main(argv=None) -> int:
+    """Entry point of ``speckle-opd-retrieval``; returns the exit code."""
     args = _parser().parse_args(argv)
     logging.basicConfig(level=logging.WARNING - 10 * min(getattr(args, "verbose", 0), 2),
                         format="%(levelname)s %(name)s: %(message)s")

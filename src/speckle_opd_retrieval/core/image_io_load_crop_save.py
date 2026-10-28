@@ -83,8 +83,11 @@ def save_result(result, out_dir: str, name: str, formats: Iterable[str] = ("tiff
             fig, ax = plt.subplots(figsize=(7, 6))
             im = ax.imshow(arrays["opd"], cmap=cmap)
             fig.colorbar(im, ax=ax, label=f"OPD [{unit}]", shrink=0.85)
-            ax.set_title(f"{name} — {result.method}"); ax.axis("off")
-            p = f"{base}_opd.png"; fig.savefig(p, dpi=150, bbox_inches="tight"); plt.close(fig)
+            ax.set_title(f"{name} — {result.method}")
+            ax.axis("off")
+            p = f"{base}_opd.png"
+            fig.savefig(p, dpi=150, bbox_inches="tight")
+            plt.close(fig)
             written.append(p)
         else:
             raise ValueError(f"unknown format '{fmt}' (tiff, npy, png)")

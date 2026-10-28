@@ -19,9 +19,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-import numpy as np
+import torch
 
 from ...core import MethodOutput, OPDRetriever, Setup
+from .optical_flow_network_builders import build_flow_model, resolve_checkpoint
 from .patch_tiling_and_stitching import pad_to, stitch, tile_grid
 
 log = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class DeepCWFS(OPDRetriever):
             ``$SPECKLE_OPD_CHECKPOINTS``, ``$SPECKLE_OPD_DATA/deep_cwfs_model_checkpoints`` or ``../data/``.
         model: ``raft_large`` | ``raft_small`` | ``sea_raft_medium`` | ``sea_raft_small``; guessed from the
             checkpoint name if omitted. A model without a checkpoint loads that model's newest checkpoint.
-        device: ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``.
+        device: ``None`` (CUDA if available, else CPU), ``"cpu"``, ``"cuda"``, ``"cuda:1"``, ``"mps"``.
         patch_size: square tile size [px] (networks were trained on ~500 px crops); smaller
             images are mirror-padded up to it.
         overlap: tile overlap [px].
@@ -51,49 +52,48 @@ class DeepCWFS(OPDRetriever):
     default_integrator = "cg"
 
     def __init__(self, setup: Setup, checkpoint: Optional[str] = None, model: Optional[str] = None,
-                 device: str = "cpu", patch_size: int = 500, overlap: int = 150, blend: str = "mean",
+                 device: Optional[str] = None, patch_size: int = 500, overlap: int = 150, blend: str = "mean",
                  batch_size: int = 1, iters: Optional[int] = None, integrator: Optional[str] = None):
-        try:
-            import torch
-        except ImportError as e:  # pragma: no cover
-            raise ImportError("Deep CWFS needs PyTorch: pip install -e '.[deep]'") from e
-        from .optical_flow_network_builders import build_flow_model, resolve_checkpoint
-
-        if str(device).startswith("cuda") and not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but not available; use device='cpu'.")
+        """Resolve the checkpoint and load the network onto the device (see the class docstring for arguments)."""
         if not 0 <= int(overlap) < int(patch_size):
             raise ValueError("need 0 <= overlap < patch_size")
-        checkpoint = resolve_checkpoint(model, checkpoint)          # recorded in params for provenance
-        self.flow_model = build_flow_model(model, checkpoint, device=device, iters=iters)
-        super().__init__(setup, integrator=integrator, checkpoint=checkpoint, model=self.flow_model.name,
-                         device=str(device), patch_size=int(patch_size), overlap=int(overlap), blend=blend,
+        checkpoint = resolve_checkpoint(model, checkpoint)  # recorded in params for provenance
+        super().__init__(setup, integrator=integrator, device=device, checkpoint=checkpoint, model=model,
+                         patch_size=int(patch_size), overlap=int(overlap), blend=blend,
                          batch_size=max(1, int(batch_size)), iters=iters)
+        self.flow_model = build_flow_model(model, checkpoint, device=self.device, iters=iters)
+        self.params["model"] = self.flow_model.name
 
-    def estimate_flow(self, reference: np.ndarray, specimen: np.ndarray) -> np.ndarray:
-        """Raw network output (2, H, W) for the whole image, stitched from tiles. Each tile is
-        normalised by the maximum of its reference tile, as in the original script."""
-        import torch
-
+    def estimate_flow(self, reference: torch.Tensor, specimen: torch.Tensor) -> torch.Tensor:
+        """Raw network output (2, H, W) for the whole image, stitched from tiles (on ``self.device``).
+        Each tile is normalised by the maximum of its reference tile, as in the original script."""
         p = self.params
         P = p["patch_size"]
         H, W = reference.shape
-        ref = pad_to(reference.astype(np.float32), P, P)
-        spec = pad_to(specimen.astype(np.float32), P, P)
-        corners = tile_grid(ref.shape, P, p["overlap"])
+
+        # the networks run in float32, as in the original script
+        ref = pad_to(reference.to(self.device).float(), P, P)
+        spec = pad_to(specimen.to(self.device).float(), P, P)
+        corners = tile_grid(tuple(ref.shape), P, p["overlap"])
         log.info("deep_cwfs (%s): %d tile(s) of %d px", self.flow_model.name, len(corners), P)
+
         flows = []
         for i in range(0, len(corners), p["batch_size"]):
-            chunk = corners[i:i + p["batch_size"]]
-            r = np.stack([ref[a:a + P, b:b + P] for a, b in chunk])
-            s = np.stack([spec[a:a + P, b:b + P] for a, b in chunk])
-            scale = r.reshape(len(chunk), -1).max(axis=1)[:, None, None]
+            batch = corners[i:i + p["batch_size"]]
+            ref_tiles = torch.stack([ref[r:r + P, c:c + P] for r, c in batch])
+            spec_tiles = torch.stack([spec[r:r + P, c:c + P] for r, c in batch])
+
+            # normalise both tiles by the maximum of the reference tile
+            scale = ref_tiles.reshape(len(batch), -1).amax(dim=1)[:, None, None]
             scale[scale == 0] = 1.0
-            out = self.flow_model(torch.from_numpy(r / scale), torch.from_numpy(s / scale))
-            flows.extend(out.double().numpy())
-        flow = stitch(flows, corners, ref.shape, p["overlap"], p["blend"])
-        return flow[:, :H, :W]
+            flow_tiles = self.flow_model(ref_tiles / scale, spec_tiles / scale)
+            flows.extend(flow_tiles.to(self.dtype))
+
+        flow = stitch(flows, corners, tuple(ref.shape), p["overlap"], p["blend"])
+        return flow[:, :H, :W]  # remove the padding
 
     def _estimate(self, reference, specimen) -> MethodOutput:
-        flow = self.estimate_flow(reference, specimen)          # channels (y, x)
+        """Network flow -> displacement in the package convention."""
+        flow = self.estimate_flow(reference, specimen)  # channels (y, x)
         # the networks' labels are -d (module docstring)
         return MethodOutput(displacement=-flow, info={"model": self.flow_model.name})

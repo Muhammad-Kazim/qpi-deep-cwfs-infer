@@ -17,9 +17,9 @@ data/                                  shared, READ-ONLY raw measurements (one f
 speckle_opd_retrieval/                 this project
   src/speckle_opd_retrieval/
     core/                              shared: Setup/RetrievalResult, OPDRetriever interface + lazy method registry,
-                                       Poisson integration (dct, cg), image I/O
-    methods/dic/                       DIC retriever + ZNCC core (numpy/scipy)
-    methods/deep_cwfs/                 Deep CWFS retriever, network builders, tiling, vendored SEA-RAFT (torch)
+                                       Poisson integration (dct, cg), device helpers, image I/O
+    methods/dic/                       DIC retriever + ZNCC core
+    methods/deep_cwfs/                 Deep CWFS retriever, network builders, tiling, vendored SEA-RAFT
     command_line_interface.py          `speckle-opd-retrieval methods | run`
   tests/, examples/                    every folder has a README listing its files
   archive/                             original code (classical CWFS still to port), read-only, delete when done
@@ -34,20 +34,23 @@ The folder conventions are in `Claude+Projects/README.md` and `CLAUDE.md`:
 ## Common interface (v0.1.0, 27 Oct 2026)
 ```python
 setup = Setup(pixel_size=3.45e-6, distance=2.48e-3)
-m = get_method("dic" | "deep_cwfs", setup, **params)      # available_methods() lists them without importing torch
+m = get_method("dic" | "deep_cwfs", setup, device=None, **params)   # device None: CUDA if available, else CPU
 res = m.retrieve(reference, specimen)                       # or m.retrieve_many(reference, [spec, ...])
 res.opd [m] (H,W) · res.opd_gradient (2,H,W) · res.displacement [px] (2,H,W) · res.amplitude · res.params · res.info · res.save(...)
 ```
-- **The base class** `OPDRetriever` does input checks, integration (`integrator="dct"|"cg"`), scaling, timing and the result.
+- **Everything is PyTorch** (since 28 Oct 2026): methods, integration and tiling run on the retriever's `device`, in
+  float64 (float32 on MPS). Inputs: NumPy or tensors; `RetrievalResult`: NumPy on the CPU. The torch DIC and integrators
+  reproduce the validated NumPy versions to ≤1e-10 (frozen copy in `tests/reference_numpy_implementations_validated.py`).
+- **The base class** `OPDRetriever` does input checks, device placement, integration (`integrator="dct"|"cg"`), scaling, timing and the result.
 - **A method implements** `_estimate(ref, spec) -> MethodOutput(displacement, phi=None, amplitude=None, info)`.
 - **To add a method:** create `methods/<name>/` and add one line to `METHODS`.
 
 ## Status
 | Component | State |
 |---|---|
-| Core interface, registry, integration, I/O, CLI | **Done, tested** (22 numpy-based tests pass) |
-| DIC | **Done, tested**. The grid result is bilinearly upsampled to full resolution before DCT integration. |
-| Deep CWFS | **Ported, not yet run with torch.** The tests (random-weight shapes, regression vs the original script, sign agreement with DIC) skip until torch, checkpoints and data are available. |
+| Core interface, registry, integration, I/O, CLI | **Done, tested**, torch (CPU/GPU) |
+| DIC | **Done, tested**, torch (CPU/GPU), identical to the validated NumPy version. The grid result is bilinearly upsampled to full resolution before DCT integration. |
+| Deep CWFS | **Done.** Reproduces the original script (GPU run 27 Oct 2026); sign agrees with DIC (corr +0.98). |
 | Classical CWFS | To port into `methods/classical_cwfs/`, returning `phi` and `amplitude` via `MethodOutput`. |
 
 ## Physics and conventions (keep consistent)
@@ -118,7 +121,7 @@ An earlier FFT-correlation version normalised only per window. It had 0.25 px wo
 ## Next steps
 1. Port classical and deep CWFS from the archive into `src/speckle_opd_retrieval/`, behind one interface:
    `(reference, specimen) → RetrievalResult(opd [m], opd_gradient (y,x), displacement [px], amplitude?, info)`.
-   Torch stays an optional `[deep]` extra; DIC and integration must work with numpy and scipy only.
+   Everything in torch (decided 28 Oct 2026: torch is a required dependency so every method can run on the GPU).
 2. Add regression tests against the originals: `cws_torch.cws` must give the same φ, and the original inference script the same OPD on the 2026-04-13 samples with the real checkpoints.
 3. Resolve the classical-vs-deep sign on synthellips ground truth.
 4. Add a CLI (`run` with multiple methods and specimen globs, plus JSON config with the legacy key mapping).
